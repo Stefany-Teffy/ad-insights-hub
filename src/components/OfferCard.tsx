@@ -16,16 +16,16 @@ export function OfferCard({ offer }: OfferCardProps) {
   return (
     <Card
       onClick={() => navigate(`/ofertas/${offer.id}`)}
-      className="cursor-pointer p-4 shadow-card transition-all duration-200 hover:shadow-card-hover hover:border-primary/20 active:scale-[0.99]"
+      className="cursor-pointer p-4 shadow-card transition-all duration-200 hover:shadow-card-hover hover:border-primary/20 active:scale-[0.99] h-full flex flex-col"
     >
       {/* Header */}
       <div className="flex items-start justify-between mb-4">
-        <div className="space-y-1">
+        <div className="space-y-1 w-full overflow-hidden">
           <div className="flex items-center gap-2">
-            <div className={cn("h-2.5 w-2.5 rounded-full", getHealthColor(health))} />
-            <h3 className="font-semibold text-foreground">{offer.name}</h3>
+            <div className={cn("h-2.5 w-2.5 rounded-full shrink-0", getHealthColor(health))} />
+            <h3 className="font-semibold text-foreground truncate">{offer.name}</h3>
           </div>
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground truncate">
             <span>{offer.niche}</span>
             <span>•</span>
             <span>{offer.country}</span>
@@ -34,30 +34,33 @@ export function OfferCard({ offer }: OfferCardProps) {
       </div>
 
       {/* Metrics Grid */}
-      <div className="grid grid-cols-2 gap-4 mb-4">
+      <div className="grid grid-cols-2 gap-4 mb-4 flex-1">
         {/* Spend Column */}
-        <div className="space-y-3">
+        {/* min-w-0 é essencial para o grid permitir a quebra de linha interna */}
+        <div className="space-y-3 min-w-0">
           <div className="space-y-0.5">
-            <p className="text-xs text-muted-foreground">Spend Total</p>
-            <p className="text-sm font-semibold">{formatCurrency(offer.metrics.spendTotal)}</p>
+            <p className="text-xs text-muted-foreground truncate">Spend Total</p>
+            <p className="text-sm font-semibold break-words leading-tight">
+              {formatCurrency(offer.metrics.spendTotal)}
+            </p>
           </div>
           <div className="space-y-0.5">
-            <p className="text-xs text-muted-foreground">Spend Hoje</p>
-            <p className="text-sm font-medium">{formatCurrency(offer.metrics.spendToday)}</p>
+            <p className="text-xs text-muted-foreground truncate">Spend Hoje</p>
+            <p className="text-sm font-medium break-words leading-tight">{formatCurrency(offer.metrics.spendToday)}</p>
           </div>
           <div className="space-y-0.5">
-            <p className="text-xs text-muted-foreground">Spend 7d</p>
-            <p className="text-sm font-medium">{formatCurrency(offer.metrics.spend7d)}</p>
+            <p className="text-xs text-muted-foreground truncate">Spend 7d</p>
+            <p className="text-sm font-medium break-words leading-tight">{formatCurrency(offer.metrics.spend7d)}</p>
           </div>
         </div>
 
         {/* ROAS Column */}
-        <div className="space-y-3">
+        <div className="space-y-3 min-w-0">
           <div className="space-y-0.5">
-            <p className="text-xs text-muted-foreground">ROAS Total</p>
+            <p className="text-xs text-muted-foreground truncate">ROAS Total</p>
             <p
               className={cn(
-                "text-sm font-semibold",
+                "text-sm font-semibold break-words leading-tight",
                 health === "success" && "text-success",
                 health === "warning" && "text-warning",
                 health === "danger" && "text-danger",
@@ -67,22 +70,22 @@ export function OfferCard({ offer }: OfferCardProps) {
             </p>
           </div>
           <div className="space-y-0.5">
-            <p className="text-xs text-muted-foreground">ROAS Hoje</p>
-            <p className="text-sm font-medium">{formatRoas(offer.metrics.roasToday)}</p>
+            <p className="text-xs text-muted-foreground truncate">ROAS Hoje</p>
+            <p className="text-sm font-medium break-words leading-tight">{formatRoas(offer.metrics.roasToday)}</p>
           </div>
           <div className="space-y-0.5">
-            <p className="text-xs text-muted-foreground">ROAS 7d</p>
-            <p className="text-sm font-medium">{formatRoas(offer.metrics.roas7d)}</p>
+            <p className="text-xs text-muted-foreground truncate">ROAS 7d</p>
+            <p className="text-sm font-medium break-words leading-tight">{formatRoas(offer.metrics.roas7d)}</p>
           </div>
         </div>
       </div>
 
       {/* Footer - Creative Badges */}
-      <div className="flex items-center gap-2 pt-3 border-t border-border">
-        <Badge variant="secondary" className="text-xs">
+      <div className="flex items-center gap-2 pt-3 border-t border-border mt-auto">
+        <Badge variant="secondary" className="text-xs whitespace-nowrap">
           {offer.creativesCount.active} Liberados
         </Badge>
-        <Badge variant="outline" className="text-xs">
+        <Badge variant="outline" className="text-xs whitespace-nowrap">
           {offer.creativesCount.testing} Em Teste
         </Badge>
       </div>
