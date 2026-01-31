@@ -8,6 +8,8 @@ import Dashboard from "./pages/Dashboard";
 import OfferDetails from "./pages/OfferDetails";
 import OffersManagement from "./pages/OffersManagement";
 import CreativesManagement from "./pages/CreativesManagement";
+import ArchivedOffers from "./pages/ArchivedOffers";
+import ArchivedCreatives from "./pages/ArchivedCreatives";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -23,7 +25,9 @@ const App = () => (
             <Route path="/" element={<Dashboard />} />
             <Route path="/ofertas" element={<OffersManagement />} />
             <Route path="/ofertas/:id" element={<OfferDetails />} />
+            <Route path="/ofertas-arquivadas" element={<ArchivedOffers />} />
             <Route path="/criativos" element={<CreativesManagement />} />
+            <Route path="/criativos-arquivados" element={<ArchivedCreatives />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>

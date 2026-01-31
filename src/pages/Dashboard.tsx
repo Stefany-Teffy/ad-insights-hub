@@ -1,5 +1,7 @@
 import { useState } from 'react';
-import { RefreshCw, Search, Filter } from 'lucide-react';
+import { RefreshCw, Search, Filter, CalendarIcon } from 'lucide-react';
+import { format } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -9,17 +11,33 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import { Calendar } from '@/components/ui/calendar';
 import { KPIDualCard } from '@/components/KPICard';
 import { OfferCard } from '@/components/OfferCard';
 import { mockOffers, niches, countries, calculateTotals } from '@/lib/mockData';
 import { formatCurrency, formatRoas, getMetricStatus } from '@/lib/metrics';
 import { cn } from '@/lib/utils';
+import type { DateRange } from 'react-day-picker';
+
+const statusOptions = [
+  { value: 'all', label: 'Todos Status' },
+  { value: 'active', label: 'Ativo' },
+  { value: 'paused', label: 'Pausado' },
+  { value: 'archived', label: 'Arquivado' },
+];
 
 export default function Dashboard() {
   const [searchQuery, setSearchQuery] = useState('');
   const [nicheFilter, setNicheFilter] = useState<string>('all');
   const [countryFilter, setCountryFilter] = useState<string>('all');
   const [healthFilter, setHealthFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
 
   const totals = calculateTotals();
 
@@ -28,10 +46,11 @@ export default function Dashboard() {
     const matchesSearch = offer.name.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesNiche = nicheFilter === 'all' || offer.niche === nicheFilter;
     const matchesCountry = countryFilter === 'all' || offer.country === countryFilter;
+    const matchesStatus = statusFilter === 'all' || offer.status === statusFilter;
     const health = getMetricStatus(offer.metrics.roasTotal, 'roas', offer.thresholds);
     const matchesHealth = healthFilter === 'all' || health === healthFilter;
     
-    return matchesSearch && matchesNiche && matchesCountry && matchesHealth;
+    return matchesSearch && matchesNiche && matchesCountry && matchesStatus && matchesHealth;
   });
 
   return (
@@ -51,7 +70,7 @@ export default function Dashboard() {
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <KPIDualCard
-          leftLabel="Gastos Totais"
+          leftLabel="Spend Total"
           leftValue={formatCurrency(totals.spendTotal)}
           rightLabel="ROAS Total"
           rightValue={formatRoas(totals.roasTotal)}
@@ -65,7 +84,7 @@ export default function Dashboard() {
           rightVariant="success"
         />
         <KPIDualCard
-          leftLabel="Gastos 7d"
+          leftLabel="Spend 7d"
           leftValue={formatCurrency(totals.spend7d)}
           rightLabel="ROAS 7d"
           rightValue="1.52"
@@ -118,12 +137,22 @@ export default function Dashboard() {
             ))}
           </SelectContent>
         </Select>
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="w-[150px]">
+            <SelectValue placeholder="Status" />
+          </SelectTrigger>
+          <SelectContent>
+            {statusOptions.map((status) => (
+              <SelectItem key={status.value} value={status.value}>{status.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <Select value={healthFilter} onValueChange={setHealthFilter}>
           <SelectTrigger className="w-[150px]">
             <SelectValue placeholder="Saúde" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Todas</SelectItem>
+            <SelectItem value="all">Todas Saúdes</SelectItem>
             <SelectItem value="success">
               <div className="flex items-center gap-2">
                 <span className="h-2 w-2 rounded-full bg-success" />
@@ -144,6 +173,42 @@ export default function Dashboard() {
             </SelectItem>
           </SelectContent>
         </Select>
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button
+              variant="outline"
+              className={cn(
+                "w-[200px] justify-start text-left font-normal",
+                !dateRange && "text-muted-foreground"
+              )}
+            >
+              <CalendarIcon className="mr-2 h-4 w-4" />
+              {dateRange?.from ? (
+                dateRange.to ? (
+                  <>
+                    {format(dateRange.from, "dd/MM", { locale: ptBR })} -{" "}
+                    {format(dateRange.to, "dd/MM", { locale: ptBR })}
+                  </>
+                ) : (
+                  format(dateRange.from, "dd/MM/yyyy", { locale: ptBR })
+                )
+              ) : (
+                <span>Período</span>
+              )}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-auto p-0" align="start">
+            <Calendar
+              initialFocus
+              mode="range"
+              defaultMonth={dateRange?.from}
+              selected={dateRange}
+              onSelect={setDateRange}
+              numberOfMonths={2}
+              className="pointer-events-auto"
+            />
+          </PopoverContent>
+        </Popover>
       </div>
 
       {/* Offer Cards Grid */}

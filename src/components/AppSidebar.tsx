@@ -1,4 +1,4 @@
-import { LayoutDashboard, Tags, Video, ChevronLeft, ChevronRight } from 'lucide-react';
+import { LayoutDashboard, Tags, Video, ChevronLeft, ChevronRight, Archive } from 'lucide-react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -8,6 +8,11 @@ const navigation = [
   { name: 'Painel', href: '/', icon: LayoutDashboard },
   { name: 'Minhas Ofertas', href: '/ofertas', icon: Tags },
   { name: 'Meus Criativos', href: '/criativos', icon: Video },
+];
+
+const archiveNavigation = [
+  { name: 'Ofertas Arquivadas', href: '/ofertas-arquivadas', icon: Archive },
+  { name: 'Criativos Arquivados', href: '/criativos-arquivados', icon: Archive },
 ];
 
 export function AppSidebar() {
@@ -43,7 +48,36 @@ export function AppSidebar() {
         <nav className="flex-1 space-y-1 p-3">
           {navigation.map((item) => {
             const isActive = location.pathname === item.href || 
-              (item.href !== '/' && location.pathname.startsWith(item.href));
+              (item.href !== '/' && location.pathname.startsWith(item.href) && !location.pathname.includes('arquivad'));
+            
+            return (
+              <NavLink
+                key={item.name}
+                to={item.href}
+                className={cn(
+                  'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
+                  isActive
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                  collapsed && 'justify-center px-2'
+                )}
+              >
+                <item.icon className="h-5 w-5 flex-shrink-0" />
+                {!collapsed && <span>{item.name}</span>}
+              </NavLink>
+            );
+          })}
+          
+          {/* Archive Section */}
+          {!collapsed && (
+            <div className="pt-4 mt-4 border-t border-border">
+              <p className="px-3 mb-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                Arquivados
+              </p>
+            </div>
+          )}
+          {archiveNavigation.map((item) => {
+            const isActive = location.pathname === item.href;
             
             return (
               <NavLink

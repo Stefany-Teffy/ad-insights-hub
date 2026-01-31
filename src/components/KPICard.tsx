@@ -89,12 +89,12 @@ export function KPIDualCard({
   className,
 }: KPIDualCardProps) {
   return (
-    <Card className={cn('p-4 shadow-card', className)}>
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-1">
-          <p className="kpi-label">{leftLabel}</p>
+    <Card className={cn('p-4 shadow-card min-w-0', className)}>
+      <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-1 min-w-0 pr-2">
+          <p className="kpi-label truncate">{leftLabel}</p>
           <p
-            className={cn('kpi-value', {
+            className={cn('text-lg lg:text-xl xl:text-2xl font-bold tracking-tight break-words leading-tight', {
               'text-success': leftVariant === 'success',
               'text-warning': leftVariant === 'warning',
               'text-danger': leftVariant === 'danger',
@@ -103,10 +103,10 @@ export function KPIDualCard({
             {leftValue}
           </p>
         </div>
-        <div className="space-y-1 border-l border-border pl-4">
-          <p className="kpi-label">{rightLabel}</p>
+        <div className="space-y-1 border-l border-border pl-2 min-w-0">
+          <p className="kpi-label truncate">{rightLabel}</p>
           <p
-            className={cn('kpi-value', {
+            className={cn('text-lg lg:text-xl xl:text-2xl font-bold tracking-tight break-words leading-tight', {
               'text-success': rightVariant === 'success',
               'text-warning': rightVariant === 'warning',
               'text-danger': rightVariant === 'danger',

@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Plus, Search, Filter } from 'lucide-react';
+import { ArrowLeft, Plus, Search, ArrowUpDown, CalendarIcon } from 'lucide-react';
+import { format } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
@@ -29,12 +31,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import { Calendar } from '@/components/ui/calendar';
 import { Label } from '@/components/ui/label';
 import { KPICard } from '@/components/KPICard';
 import { MetricBadge, StatusBadge } from '@/components/MetricBadge';
-import { getOfferById, getCreativesBySource, type DailyMetric, type Creative } from '@/lib/mockData';
+import { getOfferById, getCreativesBySource, copywriters, type Creative } from '@/lib/mockData';
 import { formatCurrency, formatRoas, getMetricStatus, getMetricClass } from '@/lib/metrics';
 import { cn } from '@/lib/utils';
+
+type SortField = 'roas' | 'ic' | 'cpc' | null;
+type SortDirection = 'asc' | 'desc';
 
 export default function OfferDetails() {
   const { id } = useParams<{ id: string }>();
@@ -42,7 +53,26 @@ export default function OfferDetails() {
   const [isMetricDialogOpen, setIsMetricDialogOpen] = useState(false);
   const [isCreativeDialogOpen, setIsCreativeDialogOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [periodFilter, setPeriodFilter] = useState<string>('all');
+  const [copyFilter, setCopyFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [sortField, setSortField] = useState<SortField>(null);
+  const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+  
+  // Metric dialog state
+  const [metricDate, setMetricDate] = useState<Date>(new Date());
+  const [roasGreen, setRoasGreen] = useState('1.30');
+  const [roasYellow, setRoasYellow] = useState('1.10');
+  const [icGreen, setIcGreen] = useState('50.00');
+  const [icYellow, setIcYellow] = useState('60.00');
+  const [cpcGreen, setCpcGreen] = useState('1.50');
+  const [cpcYellow, setCpcYellow] = useState('2.00');
+  
+  // Creative metric dialog state
+  const [selectedCreativeId, setSelectedCreativeId] = useState<string>('');
+  const [creativeSearchMode, setCreativeSearchMode] = useState<'select' | 'search'>('select');
+  const [creativeSearchInput, setCreativeSearchInput] = useState('');
+  const [creativeMetricDate, setCreativeMetricDate] = useState<Date>(new Date());
 
   const offer = getOfferById(id || '');
 
@@ -57,22 +87,243 @@ export default function OfferDetails() {
   const fbCreatives = getCreativesBySource(offer.id, 'FB');
   const ytCreatives = getCreativesBySource(offer.id, 'YT');
 
-  const filterCreatives = (creatives: Creative[]) => {
-    return creatives.filter((creative) => {
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('desc');
+    }
+  };
+
+  const filterAndSortCreatives = (creatives: Creative[]) => {
+    let filtered = creatives.filter((creative) => {
       const matchesStatus = statusFilter === 'all' || creative.status === statusFilter;
       const matchesSearch = creative.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
         creative.copy.toLowerCase().includes(searchQuery.toLowerCase());
-      return matchesStatus && matchesSearch;
+      const matchesCopy = copyFilter === 'all' || creative.copywriter === copyFilter;
+      return matchesStatus && matchesSearch && matchesCopy;
     });
+
+    // Sort if a field is selected
+    if (sortField) {
+      filtered = [...filtered].sort((a, b) => {
+        const aSpend = a.metrics.reduce((sum, m) => sum + m.spend, 0);
+        const aRevenue = a.metrics.reduce((sum, m) => sum + m.revenue, 0);
+        const bSpend = b.metrics.reduce((sum, m) => sum + m.spend, 0);
+        const bRevenue = b.metrics.reduce((sum, m) => sum + m.revenue, 0);
+        
+        let aValue: number, bValue: number;
+        
+        switch (sortField) {
+          case 'roas':
+            aValue = aSpend > 0 ? aRevenue / aSpend : 0;
+            bValue = bSpend > 0 ? bRevenue / bSpend : 0;
+            break;
+          case 'ic':
+            aValue = 45 + Math.random() * 20;
+            bValue = 45 + Math.random() * 20;
+            break;
+          case 'cpc':
+            aValue = 1.2 + Math.random() * 1;
+            bValue = 1.2 + Math.random() * 1;
+            break;
+          default:
+            return 0;
+        }
+        
+        return sortDirection === 'asc' ? aValue - bValue : bValue - aValue;
+      });
+    }
+
+    return filtered;
   };
 
-  const renderCreativesTable = (creatives: Creative[]) => {
-    const filtered = filterCreatives(creatives);
+  const getSelectedCreative = () => {
+    const allCreatives = [...fbCreatives, ...ytCreatives];
+    return allCreatives.find(c => c.id === selectedCreativeId);
+  };
+
+  const renderCreativesTable = (creatives: Creative[], source: 'FB' | 'YT') => {
+    const filtered = filterAndSortCreatives(creatives);
+    
+    const SortableHeader = ({ field, children }: { field: SortField; children: React.ReactNode }) => (
+      <TableHead 
+        className="text-right cursor-pointer hover:bg-muted/50 transition-colors"
+        onClick={() => handleSort(field)}
+      >
+        <div className="flex items-center justify-end gap-1">
+          {children}
+          <ArrowUpDown className={cn(
+            "h-3 w-3",
+            sortField === field ? "text-foreground" : "text-muted-foreground"
+          )} />
+        </div>
+      </TableHead>
+    );
     
     return (
       <div className="space-y-4">
+        {/* Header with button */}
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-medium text-muted-foreground">
+            Criativos {source === 'FB' ? 'Facebook' : 'YouTube'}
+          </h3>
+          <Dialog open={isCreativeDialogOpen} onOpenChange={setIsCreativeDialogOpen}>
+            <DialogTrigger asChild>
+              <Button className="gap-2">
+                <Plus className="h-4 w-4" />
+                Lançar Métrica Diária do Criativo
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-lg">
+              <DialogHeader>
+                <DialogTitle>Lançar Métrica Diária do Criativo</DialogTitle>
+                <DialogDescription>
+                  Adicione métricas diárias para um criativo de {source === 'FB' ? 'Facebook' : 'YouTube'}
+                </DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                {/* Creative selection */}
+                <div className="grid gap-2">
+                  <Label>Modo de Seleção</Label>
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant={creativeSearchMode === 'select' ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setCreativeSearchMode('select')}
+                    >
+                      Selecionar
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={creativeSearchMode === 'search' ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setCreativeSearchMode('search')}
+                    >
+                      Digitar ID
+                    </Button>
+                  </div>
+                </div>
+                
+                {creativeSearchMode === 'select' ? (
+                  <div className="grid gap-2">
+                    <Label>Selecionar Criativo</Label>
+                    <Select value={selectedCreativeId} onValueChange={setSelectedCreativeId}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione um criativo" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {creatives.map((creative) => (
+                          <SelectItem key={creative.id} value={creative.id}>
+                            {creative.id} - {creative.copy}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ) : (
+                  <div className="grid gap-2">
+                    <Label>ID do Criativo</Label>
+                    <Input
+                      placeholder="Digite o ID do criativo"
+                      value={creativeSearchInput}
+                      onChange={(e) => setCreativeSearchInput(e.target.value)}
+                      className="font-mono"
+                    />
+                  </div>
+                )}
+
+                {/* Display selected creative info */}
+                {(selectedCreativeId || creativeSearchInput) && (
+                  <div className="p-3 rounded-lg bg-muted space-y-2">
+                    <div className="grid gap-2">
+                      <Label className="text-muted-foreground text-xs">ID do Criativo</Label>
+                      <Input 
+                        value={selectedCreativeId || creativeSearchInput} 
+                        disabled 
+                        className="bg-background font-mono text-sm" 
+                      />
+                    </div>
+                    {getSelectedCreative() && (
+                      <>
+                        <div className="grid gap-2">
+                          <Label className="text-muted-foreground text-xs">Copy</Label>
+                          <Input 
+                            value={getSelectedCreative()?.copy || ''} 
+                            disabled 
+                            className="bg-background text-sm" 
+                          />
+                        </div>
+                        <div className="grid gap-2">
+                          <Label className="text-muted-foreground text-xs">Status</Label>
+                          <div className="flex">
+                            <StatusBadge status={getSelectedCreative()?.status || 'active'} />
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+
+                <div className="grid gap-2">
+                  <Label>Data *</Label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className="w-full justify-start text-left font-normal"
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {format(creativeMetricDate, "dd/MM/yyyy", { locale: ptBR })}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar
+                        mode="single"
+                        selected={creativeMetricDate}
+                        onSelect={(date) => date && setCreativeMetricDate(date)}
+                        initialFocus
+                        className="pointer-events-auto"
+                      />
+                    </PopoverContent>
+                  </Popover>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label>Faturamento</Label>
+                    <Input type="number" placeholder="0.00" />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Impressões</Label>
+                    <Input type="number" placeholder="0" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label>Cliques</Label>
+                    <Input type="number" placeholder="0" />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Conversões</Label>
+                    <Input type="number" placeholder="0" />
+                  </div>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setIsCreativeDialogOpen(false)}>
+                  Cancelar
+                </Button>
+                <Button onClick={() => setIsCreativeDialogOpen(false)}>Salvar</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </div>
+
         {/* Filters */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <div className="relative flex-1 max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
@@ -82,16 +333,39 @@ export default function OfferDetails() {
               className="pl-9"
             />
           </div>
+          <Select value={periodFilter} onValueChange={setPeriodFilter}>
+            <SelectTrigger className="w-[130px]">
+              <SelectValue placeholder="Período" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todo Período</SelectItem>
+              <SelectItem value="today">Hoje</SelectItem>
+              <SelectItem value="7d">Últimos 7d</SelectItem>
+              <SelectItem value="30d">Últimos 30d</SelectItem>
+              <SelectItem value="custom">Personalizado</SelectItem>
+            </SelectContent>
+          </Select>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-[140px]">
+            <SelectTrigger className="w-[150px]">
               <SelectValue placeholder="Status" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Todos</SelectItem>
+              <SelectItem value="all">Todos os Status</SelectItem>
               <SelectItem value="active">Ativo</SelectItem>
               <SelectItem value="testing">Em Teste</SelectItem>
               <SelectItem value="paused">Pausado</SelectItem>
               <SelectItem value="archived">Arquivado</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={copyFilter} onValueChange={setCopyFilter}>
+            <SelectTrigger className="w-[150px]">
+              <SelectValue placeholder="Copy" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos Copies</SelectItem>
+              {copywriters.map((copy) => (
+                <SelectItem key={copy} value={copy}>{copy}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
@@ -105,16 +379,15 @@ export default function OfferDetails() {
                 <TableHead>Status</TableHead>
                 <TableHead>Copy</TableHead>
                 <TableHead className="text-right">Spend</TableHead>
-                <TableHead className="text-right">ROAS</TableHead>
-                <TableHead className="text-right">IC</TableHead>
-                <TableHead className="text-right">CPC</TableHead>
-                <TableHead className="text-right">Ações</TableHead>
+                <SortableHeader field="roas">ROAS</SortableHeader>
+                <SortableHeader field="ic">IC</SortableHeader>
+                <SortableHeader field="cpc">CPC</SortableHeader>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filtered.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
                     Nenhum criativo encontrado.
                   </TableCell>
                 </TableRow>
@@ -156,57 +429,6 @@ export default function OfferDetails() {
                           format={(v) => formatCurrency(v)}
                         />
                       </TableCell>
-                      <TableCell className="text-right">
-                        <Dialog open={isCreativeDialogOpen} onOpenChange={setIsCreativeDialogOpen}>
-                          <DialogTrigger asChild>
-                            <Button variant="ghost" size="sm">Editar</Button>
-                          </DialogTrigger>
-                          <DialogContent>
-                            <DialogHeader>
-                              <DialogTitle>Lançar Métrica do Criativo</DialogTitle>
-                              <DialogDescription>
-                                Atualize as métricas para {creative.id}
-                              </DialogDescription>
-                            </DialogHeader>
-                            <div className="grid gap-4 py-4">
-                              <div className="grid gap-2">
-                                <Label>Data</Label>
-                                <Input type="date" />
-                              </div>
-                              <div className="grid grid-cols-2 gap-4">
-                                <div className="grid gap-2">
-                                  <Label>Spend</Label>
-                                  <Input type="number" placeholder="0.00" />
-                                </div>
-                                <div className="grid gap-2">
-                                  <Label>Faturado</Label>
-                                  <Input type="number" placeholder="0.00" />
-                                </div>
-                              </div>
-                              <div className="grid grid-cols-3 gap-4">
-                                <div className="grid gap-2">
-                                  <Label>Impressões</Label>
-                                  <Input type="number" placeholder="0" />
-                                </div>
-                                <div className="grid gap-2">
-                                  <Label>Cliques</Label>
-                                  <Input type="number" placeholder="0" />
-                                </div>
-                                <div className="grid gap-2">
-                                  <Label>Conversões</Label>
-                                  <Input type="number" placeholder="0" />
-                                </div>
-                              </div>
-                            </div>
-                            <DialogFooter>
-                              <Button variant="outline" onClick={() => setIsCreativeDialogOpen(false)}>
-                                Cancelar
-                              </Button>
-                              <Button onClick={() => setIsCreativeDialogOpen(false)}>Salvar</Button>
-                            </DialogFooter>
-                          </DialogContent>
-                        </Dialog>
-                      </TableCell>
                     </TableRow>
                   );
                 })
@@ -233,14 +455,14 @@ export default function OfferDetails() {
           <DialogTrigger asChild>
             <Button className="gap-2">
               <Plus className="h-4 w-4" />
-              Lançar Nova Métrica
+              Atualizar Métrica da Oferta
             </Button>
           </DialogTrigger>
           <DialogContent className="max-w-lg">
             <DialogHeader>
               <DialogTitle>Atualização de Métricas da Oferta</DialogTitle>
               <DialogDescription>
-                Adicione novas métricas diárias para {offer.name}
+                Configure os thresholds para {offer.name}
               </DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">
@@ -262,54 +484,153 @@ export default function OfferDetails() {
 
               <div className="grid gap-2">
                 <Label>Data *</Label>
-                <Input type="date" required />
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className="w-full justify-start text-left font-normal"
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {format(metricDate, "dd/MM/yyyy", { locale: ptBR })}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={metricDate}
+                      onSelect={(date) => date && setMetricDate(date)}
+                      initialFocus
+                      className="pointer-events-auto"
+                    />
+                  </PopoverContent>
+                </Popover>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="grid gap-2">
-                  <Label>Faturamento</Label>
-                  <Input type="number" placeholder="0.00" />
-                </div>
-                <div className="grid gap-2">
-                  <Label>Gastos</Label>
-                  <Input type="number" placeholder="0.00" />
-                </div>
-              </div>
-
-              {/* Threshold configuration */}
+              {/* ROAS Threshold */}
               <div className="pt-4 border-t border-border">
-                <h4 className="text-sm font-medium mb-3">Thresholds da Oferta</h4>
-                <p className="text-xs text-muted-foreground mb-4">
-                  Defina os valores de referência para classificar a performance desta oferta.
+                <div className="flex items-center gap-2 mb-2">
+                  <h4 className="text-sm font-medium">Thresholds – ROAS</h4>
+                </div>
+                <p className="text-xs text-muted-foreground mb-3">
+                  Defina quando o ROAS é considerado excelente, atenção ou crítico
                 </p>
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-2 gap-4">
                   <div className="grid gap-2">
-                    <Label>ROAS Ótimo</Label>
+                    <Label className="flex items-center gap-2">
+                      <span className="h-2 w-2 rounded-full bg-success" />
+                      Verde (ROAS &gt;)
+                    </Label>
                     <Input
                       type="number"
                       step="0.01"
+                      value={roasGreen}
+                      onChange={(e) => setRoasGreen(e.target.value)}
                       placeholder="1.30"
                       className="placeholder:text-muted-foreground/40"
                     />
                   </div>
                   <div className="grid gap-2">
-                    <Label>IC Máximo (R$)</Label>
+                    <Label className="flex items-center gap-2">
+                      <span className="h-2 w-2 rounded-full bg-warning" />
+                      Amarelo (ROAS &gt;)
+                    </Label>
                     <Input
                       type="number"
+                      step="0.01"
+                      value={roasYellow}
+                      onChange={(e) => setRoasYellow(e.target.value)}
+                      placeholder="1.10"
+                      className="placeholder:text-muted-foreground/40"
+                    />
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground mt-2">
+                  ✓ Verde: ROAS &gt; {roasGreen} (ótimo) | ⚠ Amarelo: {roasYellow}–{roasGreen} (atenção) | ✗ Vermelho: &lt; {roasYellow} (crítico)
+                </p>
+              </div>
+
+              {/* IC Threshold */}
+              <div className="pt-4 border-t border-border">
+                <div className="flex items-center gap-2 mb-2">
+                  <h4 className="text-sm font-medium">Thresholds – IC (Custo por Inicialização)</h4>
+                </div>
+                <p className="text-xs text-muted-foreground mb-3">
+                  Defina quando o IC é considerado excelente, atenção ou crítico
+                </p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label className="flex items-center gap-2">
+                      <span className="h-2 w-2 rounded-full bg-success" />
+                      Verde (IC &lt;)
+                    </Label>
+                    <Input
+                      type="number"
+                      value={icGreen}
+                      onChange={(e) => setIcGreen(e.target.value)}
                       placeholder="50.00"
                       className="placeholder:text-muted-foreground/40"
                     />
                   </div>
                   <div className="grid gap-2">
-                    <Label>CPC Máximo (R$)</Label>
+                    <Label className="flex items-center gap-2">
+                      <span className="h-2 w-2 rounded-full bg-warning" />
+                      Amarelo (IC &lt;)
+                    </Label>
                     <Input
                       type="number"
-                      step="0.01"
-                      placeholder="1.50"
+                      value={icYellow}
+                      onChange={(e) => setIcYellow(e.target.value)}
+                      placeholder="60.00"
                       className="placeholder:text-muted-foreground/40"
                     />
                   </div>
                 </div>
+                <p className="text-xs text-muted-foreground mt-2">
+                  ✓ Verde: IC &lt; R${icGreen} (ótimo) | ⚠ Amarelo: R${icGreen}–R${icYellow} (atenção) | ✗ Vermelho: &gt; R${icYellow} (crítico)
+                </p>
+              </div>
+
+              {/* CPC Threshold */}
+              <div className="pt-4 border-t border-border">
+                <div className="flex items-center gap-2 mb-2">
+                  <h4 className="text-sm font-medium">Thresholds – CPC (Custo por Clique)</h4>
+                </div>
+                <p className="text-xs text-muted-foreground mb-3">
+                  Defina quando o CPC é considerado excelente, atenção ou crítico
+                </p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label className="flex items-center gap-2">
+                      <span className="h-2 w-2 rounded-full bg-success" />
+                      Verde (CPC &lt;)
+                    </Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={cpcGreen}
+                      onChange={(e) => setCpcGreen(e.target.value)}
+                      placeholder="1.50"
+                      className="placeholder:text-muted-foreground/40"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label className="flex items-center gap-2">
+                      <span className="h-2 w-2 rounded-full bg-warning" />
+                      Amarelo (CPC &lt;)
+                    </Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={cpcYellow}
+                      onChange={(e) => setCpcYellow(e.target.value)}
+                      placeholder="2.00"
+                      className="placeholder:text-muted-foreground/40"
+                    />
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground mt-2">
+                  ✓ Verde: CPC &lt; R${cpcGreen} (ótimo) | ⚠ Amarelo: R${cpcGreen}–R${cpcYellow} (atenção) | ✗ Vermelho: &gt; R${cpcYellow} (crítico)
+                </p>
               </div>
             </div>
             <DialogFooter>
@@ -412,11 +733,11 @@ export default function OfferDetails() {
         </TabsContent>
 
         <TabsContent value="fb" className="mt-6">
-          {renderCreativesTable(fbCreatives)}
+          {renderCreativesTable(fbCreatives, 'FB')}
         </TabsContent>
 
         <TabsContent value="yt" className="mt-6">
-          {renderCreativesTable(ytCreatives)}
+          {renderCreativesTable(ytCreatives, 'YT')}
         </TabsContent>
       </Tabs>
     </div>

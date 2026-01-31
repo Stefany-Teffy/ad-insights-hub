@@ -1,5 +1,8 @@
 import { useState } from 'react';
-import { Plus, Pencil, Trash2, Search } from 'lucide-react';
+import { Plus, Pencil, Archive, Search, ArrowUpDown, CalendarIcon } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { format } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
@@ -18,7 +21,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog';
 import {
   Select,
@@ -36,17 +38,158 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import { Calendar } from '@/components/ui/calendar';
 import { Label } from '@/components/ui/label';
 import { StatusBadge, MetricBadge } from '@/components/MetricBadge';
 import { mockOffers, niches, countries } from '@/lib/mockData';
-import { formatCurrency, formatRoas } from '@/lib/metrics';
+import { formatCurrency, formatRoas, getMetricStatus } from '@/lib/metrics';
+import { cn } from '@/lib/utils';
+
+type SortField = 'roas' | 'ic' | 'cpc' | 'profit' | 'mc' | 'revenue' | 'spend' | 'date' | null;
+type SortDirection = 'asc' | 'desc';
 
 export default function OffersManagement() {
+  const navigate = useNavigate();
   const [isSheetOpen, setIsSheetOpen] = useState(false);
+  const [isEditSheetOpen, setIsEditSheetOpen] = useState(false);
+  const [isConfirmDialogOpen, setIsConfirmDialogOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [nicheFilter, setNicheFilter] = useState<string>('all');
+  const [countryFilter, setCountryFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [healthFilter, setHealthFilter] = useState<string>('all');
+  const [periodFilter, setPeriodFilter] = useState<string>('all');
+  const [sortField, setSortField] = useState<SortField>(null);
+  const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+  
+  // New offer form state
+  const [newOfferDate, setNewOfferDate] = useState<Date>(new Date());
+  const [roasGreen, setRoasGreen] = useState('1.30');
+  const [roasYellow, setRoasYellow] = useState('1.10');
+  const [icGreen, setIcGreen] = useState('50.00');
+  const [icYellow, setIcYellow] = useState('60.00');
+  const [cpcGreen, setCpcGreen] = useState('1.50');
+  const [cpcYellow, setCpcYellow] = useState('2.00');
+  
+  // Edit form state
+  const [editingOffer, setEditingOffer] = useState<typeof mockOffers[0] | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editNiche, setEditNiche] = useState('');
+  const [editCountry, setEditCountry] = useState('');
+  const [editStatus, setEditStatus] = useState('');
 
-  const filteredOffers = mockOffers.filter((offer) =>
-    offer.name.toLowerCase().includes(searchQuery.toLowerCase())
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('desc');
+    }
+  };
+
+  const filteredOffers = mockOffers.filter((offer) => {
+    const matchesSearch = offer.name.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesNiche = nicheFilter === 'all' || offer.niche === nicheFilter;
+    const matchesCountry = countryFilter === 'all' || offer.country === countryFilter;
+    const matchesStatus = statusFilter === 'all' || offer.status === statusFilter;
+    const health = getMetricStatus(offer.metrics.roasTotal, 'roas', offer.thresholds);
+    const matchesHealth = healthFilter === 'all' || health === healthFilter;
+    
+    return matchesSearch && matchesNiche && matchesCountry && matchesStatus && matchesHealth;
+  });
+
+  const sortedOffers = [...filteredOffers].sort((a, b) => {
+    if (!sortField) return 0;
+    
+    let aValue: number, bValue: number;
+    const aIc = a.dailyMetrics.reduce((sum, m) => sum + m.ic, 0) / a.dailyMetrics.length;
+    const bIc = b.dailyMetrics.reduce((sum, m) => sum + m.ic, 0) / b.dailyMetrics.length;
+    const aCpc = a.dailyMetrics.reduce((sum, m) => sum + m.cpc, 0) / a.dailyMetrics.length;
+    const bCpc = b.dailyMetrics.reduce((sum, m) => sum + m.cpc, 0) / b.dailyMetrics.length;
+    const aMc = a.dailyMetrics.reduce((sum, m) => sum + m.mc, 0) / a.dailyMetrics.length;
+    const bMc = b.dailyMetrics.reduce((sum, m) => sum + m.mc, 0) / b.dailyMetrics.length;
+    
+    switch (sortField) {
+      case 'roas':
+        aValue = a.metrics.roasTotal;
+        bValue = b.metrics.roasTotal;
+        break;
+      case 'ic':
+        aValue = aIc;
+        bValue = bIc;
+        break;
+      case 'cpc':
+        aValue = aCpc;
+        bValue = bCpc;
+        break;
+      case 'profit':
+        aValue = a.metrics.profit;
+        bValue = b.metrics.profit;
+        break;
+      case 'mc':
+        aValue = aMc;
+        bValue = bMc;
+        break;
+      case 'revenue':
+        aValue = a.metrics.revenue;
+        bValue = b.metrics.revenue;
+        break;
+      case 'spend':
+        aValue = a.metrics.spendTotal;
+        bValue = b.metrics.spendTotal;
+        break;
+      case 'date':
+        aValue = new Date(a.createdAt).getTime();
+        bValue = new Date(b.createdAt).getTime();
+        break;
+      default:
+        return 0;
+    }
+    
+    return sortDirection === 'asc' ? aValue - bValue : bValue - aValue;
+  });
+
+  const openEditSheet = (offer: typeof mockOffers[0]) => {
+    setEditingOffer(offer);
+    setEditName(offer.name);
+    setEditNiche(offer.niche);
+    setEditCountry(offer.country);
+    setEditStatus(offer.status);
+    setIsEditSheetOpen(true);
+  };
+
+  const handleSaveEdit = () => {
+    setIsConfirmDialogOpen(true);
+  };
+
+  const handleConfirmEdit = () => {
+    setIsConfirmDialogOpen(false);
+    setIsEditSheetOpen(false);
+    setEditingOffer(null);
+  };
+
+  const handleArchive = (offerId: string) => {
+    navigate('/ofertas-arquivadas');
+  };
+
+  const SortableHeader = ({ field, children, className }: { field: SortField; children: React.ReactNode; className?: string }) => (
+    <TableHead 
+      className={cn("cursor-pointer hover:bg-muted/50 transition-colors", className)}
+      onClick={() => handleSort(field)}
+    >
+      <div className={cn("flex items-center gap-1", className?.includes('text-right') && "justify-end")}>
+        {children}
+        <ArrowUpDown className={cn(
+          "h-3 w-3",
+          sortField === field ? "text-foreground" : "text-muted-foreground"
+        )} />
+      </div>
+    </TableHead>
   );
 
   return (
@@ -120,53 +263,154 @@ export default function OffersManagement() {
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="date">Data de Início</Label>
-                  <Input id="date" type="date" />
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className="w-full justify-start text-left font-normal"
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {format(newOfferDate, "dd/MM/yyyy", { locale: ptBR })}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar
+                        mode="single"
+                        selected={newOfferDate}
+                        onSelect={(date) => date && setNewOfferDate(date)}
+                        initialFocus
+                        className="pointer-events-auto"
+                      />
+                    </PopoverContent>
+                  </Popover>
                 </div>
               </div>
 
-              {/* Thresholds Section */}
+              {/* ROAS Threshold Section */}
               <div className="pt-4 border-t border-border">
-                <h4 className="text-sm font-medium mb-2">Thresholds da Oferta</h4>
-                <p className="text-xs text-muted-foreground mb-4">
-                  Esses valores definem as cores de status automáticas para esta oferta.
+                <div className="flex items-center gap-2 mb-2">
+                  <h4 className="text-sm font-medium">Thresholds – ROAS</h4>
+                </div>
+                <p className="text-xs text-muted-foreground mb-3">
+                  Defina quando o ROAS é considerado excelente, atenção ou crítico
                 </p>
-                <div className="grid gap-4">
+                <div className="grid grid-cols-2 gap-4">
                   <div className="grid gap-2">
-                    <Label>ROAS Alvo (Verde acima de)</Label>
+                    <Label className="flex items-center gap-2">
+                      <span className="h-2 w-2 rounded-full bg-success" />
+                      Verde (ROAS &gt;)
+                    </Label>
                     <Input
                       type="number"
                       step="0.01"
+                      value={roasGreen}
+                      onChange={(e) => setRoasGreen(e.target.value)}
                       placeholder="1.30"
                       className="placeholder:text-muted-foreground/40"
                     />
-                    <p className="text-xs text-muted-foreground">
-                      Verde: &gt; valor | Amarelo: valor - 0.20 | Vermelho: abaixo
-                    </p>
                   </div>
                   <div className="grid gap-2">
-                    <Label>IC Máximo (Verde abaixo de)</Label>
-                    <Input
-                      type="number"
-                      placeholder="50.00"
-                      className="placeholder:text-muted-foreground/40"
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Verde: &lt; valor | Amarelo: até valor + R$10 | Vermelho: acima
-                    </p>
-                  </div>
-                  <div className="grid gap-2">
-                    <Label>CPC Máximo (Verde abaixo de)</Label>
+                    <Label className="flex items-center gap-2">
+                      <span className="h-2 w-2 rounded-full bg-warning" />
+                      Amarelo (ROAS &gt;)
+                    </Label>
                     <Input
                       type="number"
                       step="0.01"
+                      value={roasYellow}
+                      onChange={(e) => setRoasYellow(e.target.value)}
+                      placeholder="1.10"
+                      className="placeholder:text-muted-foreground/40"
+                    />
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground mt-2">
+                  ✓ Verde: ROAS &gt; {roasGreen} (ótimo) | ⚠ Amarelo: {roasYellow}–{roasGreen} (atenção) | ✗ Vermelho: &lt; {roasYellow} (crítico)
+                </p>
+              </div>
+
+              {/* IC Threshold Section */}
+              <div className="pt-4 border-t border-border">
+                <div className="flex items-center gap-2 mb-2">
+                  <h4 className="text-sm font-medium">Thresholds – IC (Custo por Inicialização)</h4>
+                </div>
+                <p className="text-xs text-muted-foreground mb-3">
+                  Defina quando o IC é considerado excelente, atenção ou crítico
+                </p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label className="flex items-center gap-2">
+                      <span className="h-2 w-2 rounded-full bg-success" />
+                      Verde (IC &lt;)
+                    </Label>
+                    <Input
+                      type="number"
+                      value={icGreen}
+                      onChange={(e) => setIcGreen(e.target.value)}
+                      placeholder="50.00"
+                      className="placeholder:text-muted-foreground/40"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label className="flex items-center gap-2">
+                      <span className="h-2 w-2 rounded-full bg-warning" />
+                      Amarelo (IC &lt;)
+                    </Label>
+                    <Input
+                      type="number"
+                      value={icYellow}
+                      onChange={(e) => setIcYellow(e.target.value)}
+                      placeholder="60.00"
+                      className="placeholder:text-muted-foreground/40"
+                    />
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground mt-2">
+                  ✓ Verde: IC &lt; R${icGreen} (ótimo) | ⚠ Amarelo: R${icGreen}–R${icYellow} (atenção) | ✗ Vermelho: &gt; R${icYellow} (crítico)
+                </p>
+              </div>
+
+              {/* CPC Threshold Section */}
+              <div className="pt-4 border-t border-border">
+                <div className="flex items-center gap-2 mb-2">
+                  <h4 className="text-sm font-medium">Thresholds – CPC (Custo por Clique)</h4>
+                </div>
+                <p className="text-xs text-muted-foreground mb-3">
+                  Defina quando o CPC é considerado excelente, atenção ou crítico
+                </p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label className="flex items-center gap-2">
+                      <span className="h-2 w-2 rounded-full bg-success" />
+                      Verde (CPC &lt;)
+                    </Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={cpcGreen}
+                      onChange={(e) => setCpcGreen(e.target.value)}
                       placeholder="1.50"
                       className="placeholder:text-muted-foreground/40"
                     />
-                    <p className="text-xs text-muted-foreground">
-                      Verde: &lt; valor | Amarelo: até valor + R$0.50 | Vermelho: acima
-                    </p>
+                  </div>
+                  <div className="grid gap-2">
+                    <Label className="flex items-center gap-2">
+                      <span className="h-2 w-2 rounded-full bg-warning" />
+                      Amarelo (CPC &lt;)
+                    </Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={cpcYellow}
+                      onChange={(e) => setCpcYellow(e.target.value)}
+                      placeholder="2.00"
+                      className="placeholder:text-muted-foreground/40"
+                    />
                   </div>
                 </div>
+                <p className="text-xs text-muted-foreground mt-2">
+                  ✓ Verde: CPC &lt; R${cpcGreen} (ótimo) | ⚠ Amarelo: R${cpcGreen}–R${cpcYellow} (atenção) | ✗ Vermelho: &gt; R${cpcYellow} (crítico)
+                </p>
               </div>
             </div>
             <SheetFooter>
@@ -179,18 +423,91 @@ export default function OffersManagement() {
         </Sheet>
       </div>
 
-      {/* Search */}
-      <div className="flex items-center gap-3">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Buscar oferta..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9"
-          />
+      {/* Filters */}
+      <Card className="p-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="relative flex-1 min-w-[200px]">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Buscar oferta..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+          <Select value={nicheFilter} onValueChange={setNicheFilter}>
+            <SelectTrigger className="w-[140px]">
+              <SelectValue placeholder="Nicho" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos Nichos</SelectItem>
+              {niches.map((niche) => (
+                <SelectItem key={niche} value={niche}>{niche}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={countryFilter} onValueChange={setCountryFilter}>
+            <SelectTrigger className="w-[140px]">
+              <SelectValue placeholder="País" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos Países</SelectItem>
+              {countries.map((country) => (
+                <SelectItem key={country} value={country}>{country}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-[140px]">
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos Status</SelectItem>
+              <SelectItem value="active">Ativo</SelectItem>
+              <SelectItem value="paused">Pausado</SelectItem>
+              <SelectItem value="archived">Arquivado</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={healthFilter} onValueChange={setHealthFilter}>
+            <SelectTrigger className="w-[140px]">
+              <SelectValue placeholder="Saúde" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todas Saúdes</SelectItem>
+              <SelectItem value="success">
+                <div className="flex items-center gap-2">
+                  <span className="h-2 w-2 rounded-full bg-success" />
+                  Verde
+                </div>
+              </SelectItem>
+              <SelectItem value="warning">
+                <div className="flex items-center gap-2">
+                  <span className="h-2 w-2 rounded-full bg-warning" />
+                  Amarelo
+                </div>
+              </SelectItem>
+              <SelectItem value="danger">
+                <div className="flex items-center gap-2">
+                  <span className="h-2 w-2 rounded-full bg-danger" />
+                  Vermelho
+                </div>
+              </SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={periodFilter} onValueChange={setPeriodFilter}>
+            <SelectTrigger className="w-[140px]">
+              <SelectValue placeholder="Período" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todo Período</SelectItem>
+              <SelectItem value="today">Hoje</SelectItem>
+              <SelectItem value="7d">Últimos 7d</SelectItem>
+              <SelectItem value="30d">Últimos 30d</SelectItem>
+              <SelectItem value="custom">Personalizado</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
-      </div>
+      </Card>
 
       {/* Table */}
       <Card className="p-0 overflow-hidden">
@@ -201,18 +518,19 @@ export default function OffersManagement() {
               <TableHead>Nicho</TableHead>
               <TableHead>País</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead className="text-right">ROAS</TableHead>
-              <TableHead className="text-right">IC</TableHead>
-              <TableHead className="text-right">CPC</TableHead>
-              <TableHead className="text-right">Lucro</TableHead>
-              <TableHead className="text-right">MC</TableHead>
-              <TableHead className="text-right">Faturamento</TableHead>
-              <TableHead className="text-right">Spend Total</TableHead>
+              <SortableHeader field="date">Data Criação</SortableHeader>
+              <SortableHeader field="roas" className="text-right">ROAS</SortableHeader>
+              <SortableHeader field="ic" className="text-right">IC</SortableHeader>
+              <SortableHeader field="cpc" className="text-right">CPC</SortableHeader>
+              <SortableHeader field="profit" className="text-right">Lucro</SortableHeader>
+              <SortableHeader field="mc" className="text-right">MC</SortableHeader>
+              <SortableHeader field="revenue" className="text-right">Faturamento</SortableHeader>
+              <SortableHeader field="spend" className="text-right">Spend</SortableHeader>
               <TableHead className="text-right">Ações</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filteredOffers.map((offer) => {
+            {sortedOffers.map((offer) => {
               const avgIc = offer.dailyMetrics.reduce((sum, m) => sum + m.ic, 0) / offer.dailyMetrics.length;
               const avgCpc = offer.dailyMetrics.reduce((sum, m) => sum + m.cpc, 0) / offer.dailyMetrics.length;
               const avgMc = offer.dailyMetrics.reduce((sum, m) => sum + m.mc, 0) / offer.dailyMetrics.length;
@@ -223,6 +541,7 @@ export default function OffersManagement() {
                   <TableCell>{offer.niche}</TableCell>
                   <TableCell>{offer.country}</TableCell>
                   <TableCell><StatusBadge status={offer.status} /></TableCell>
+                  <TableCell>{new Date(offer.createdAt).toLocaleDateString('pt-BR')}</TableCell>
                   <TableCell className="text-right">
                     <MetricBadge
                       value={offer.metrics.roasTotal}
@@ -255,11 +574,21 @@ export default function OffersManagement() {
                   <TableCell className="text-right">{formatCurrency(offer.metrics.spendTotal)}</TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-1">
-                      <Button variant="ghost" size="icon" className="h-8 w-8">
+                      <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        className="h-8 w-8"
+                        onClick={() => openEditSheet(offer)}
+                      >
                         <Pencil className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-danger hover:text-danger">
-                        <Trash2 className="h-4 w-4" />
+                      <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        className="h-8 w-8 text-warning hover:text-warning"
+                        onClick={() => handleArchive(offer.id)}
+                      >
+                        <Archive className="h-4 w-4" />
                       </Button>
                     </div>
                   </TableCell>
@@ -269,6 +598,115 @@ export default function OffersManagement() {
           </TableBody>
         </Table>
       </Card>
+
+      {/* Edit Sheet */}
+      <Sheet open={isEditSheetOpen} onOpenChange={setIsEditSheetOpen}>
+        <SheetContent className="w-[500px] sm:max-w-lg overflow-y-auto">
+          <SheetHeader>
+            <SheetTitle>Editar Oferta</SheetTitle>
+            <SheetDescription>
+              Altere as informações da oferta
+            </SheetDescription>
+          </SheetHeader>
+          <div className="grid gap-4 py-6">
+            <div className="grid gap-2">
+              <Label htmlFor="edit-name">Nome da Oferta *</Label>
+              <Input 
+                id="edit-name" 
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="edit-niche">Nicho *</Label>
+                <Select value={editNiche} onValueChange={setEditNiche}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {niches.map((niche) => (
+                      <SelectItem key={niche} value={niche}>{niche}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="edit-country">País *</Label>
+                <Select value={editCountry} onValueChange={setEditCountry}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {countries.map((country) => (
+                      <SelectItem key={country} value={country}>{country}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="edit-status">Status</Label>
+              <Select value={editStatus} onValueChange={setEditStatus}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">Ativo</SelectItem>
+                  <SelectItem value="paused">Pausado</SelectItem>
+                  <SelectItem value="archived">Arquivado</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <SheetFooter>
+            <Button variant="outline" onClick={() => setIsEditSheetOpen(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleSaveEdit}>Salvar Alterações</Button>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
+
+      {/* Confirmation Dialog */}
+      <Dialog open={isConfirmDialogOpen} onOpenChange={setIsConfirmDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirmar Alterações</DialogTitle>
+            <DialogDescription>
+              Revise as informações antes de confirmar
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label className="text-muted-foreground">Nome</Label>
+              <Input value={editName} disabled className="bg-muted" />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label className="text-muted-foreground">Nicho</Label>
+                <Input value={editNiche} disabled className="bg-muted" />
+              </div>
+              <div className="grid gap-2">
+                <Label className="text-muted-foreground">País</Label>
+                <Input value={editCountry} disabled className="bg-muted" />
+              </div>
+            </div>
+            <div className="grid gap-2">
+              <Label className="text-muted-foreground">Status</Label>
+              <div className="flex items-center">
+                <StatusBadge status={editStatus as 'active' | 'paused' | 'archived'} />
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsConfirmDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleConfirmEdit}>Confirmar Alteração</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
