@@ -19,10 +19,12 @@ export interface DailyMetric {
   mc: number;
 }
 
+export type CreativeSource = 'FB' | 'YT' | 'TT';
+
 export interface Creative {
   id: string;
   offerId: string;
-  source: 'FB' | 'YT';
+  source: CreativeSource;
   copy: string;
   status: 'active' | 'testing' | 'paused' | 'archived';
   thumbnail?: string;
@@ -361,6 +363,68 @@ export const mockCreatives: Creative[] = [
       { date: '2024-01-25', spend: 360, revenue: 612, impressions: 10200, clicks: 305, conversions: 14 },
     ],
   },
+  // TikTok Creatives - Nutra Max Pro
+  {
+    id: 'ID05_NUTRA_TT1',
+    offerId: 'offer-1',
+    source: 'TT',
+    copy: 'Ana Costa',
+    status: 'active',
+    copywriter: 'Ana Costa',
+    createdAt: '2024-01-25',
+    observations: 'Alta viralização no TikTok',
+    metrics: [
+      { date: '2024-01-26', spend: 280, revenue: 532, impressions: 45000, clicks: 890, conversions: 12 },
+    ],
+  },
+  {
+    id: 'ID06_NUTRA_TT2',
+    offerId: 'offer-1',
+    source: 'TT',
+    copy: 'João Silva',
+    status: 'testing',
+    copywriter: 'João Silva',
+    createdAt: '2024-01-28',
+    metrics: [],
+  },
+  // TikTok Creatives - Crypto Academy
+  {
+    id: 'ID03_CRYPTO_TT1',
+    offerId: 'offer-2',
+    source: 'TT',
+    copy: 'Pedro Lima',
+    status: 'active',
+    copywriter: 'Pedro Lima',
+    createdAt: '2024-02-08',
+    metrics: [
+      { date: '2024-01-26', spend: 200, revenue: 240, impressions: 32000, clicks: 580, conversions: 5 },
+    ],
+  },
+  // TikTok Creatives - Slim Detox
+  {
+    id: 'ID03_SLIM_TT1',
+    offerId: 'offer-3',
+    source: 'TT',
+    copy: 'Fernanda Rocha',
+    status: 'testing',
+    copywriter: 'Fernanda Rocha',
+    createdAt: '2024-01-24',
+    metrics: [],
+  },
+  // TikTok Creatives - English Fast
+  {
+    id: 'ID03_ENG_TT1',
+    offerId: 'offer-4',
+    source: 'TT',
+    copy: 'Juliana Alves',
+    status: 'active',
+    copywriter: 'Juliana Alves',
+    createdAt: '2024-02-15',
+    observations: 'Formato dueto funcionando bem',
+    metrics: [
+      { date: '2024-01-26', spend: 180, revenue: 306, impressions: 28000, clicks: 420, conversions: 8 },
+    ],
+  },
 ];
 
 // Filter options
@@ -377,7 +441,7 @@ export const getCreativesByOfferId = (offerId: string): Creative[] => {
   return mockCreatives.filter(creative => creative.offerId === offerId);
 };
 
-export const getCreativesBySource = (offerId: string, source: 'FB' | 'YT'): Creative[] => {
+export const getCreativesBySource = (offerId: string, source: CreativeSource): Creative[] => {
   return mockCreatives.filter(creative => creative.offerId === offerId && creative.source === source);
 };
 

@@ -41,7 +41,7 @@ import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { KPICard } from '@/components/KPICard';
 import { MetricBadge, StatusBadge } from '@/components/MetricBadge';
-import { getOfferById, getCreativesBySource, copywriters, type Creative } from '@/lib/mockData';
+import { getOfferById, getCreativesBySource, copywriters, type Creative, type CreativeSource } from '@/lib/mockData';
 import { formatCurrency, formatRoas, getMetricStatus, getMetricClass } from '@/lib/metrics';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -92,6 +92,7 @@ export default function OfferDetails() {
 
   const fbCreatives = getCreativesBySource(offer.id, 'FB');
   const ytCreatives = getCreativesBySource(offer.id, 'YT');
+  const ttCreatives = getCreativesBySource(offer.id, 'TT');
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -159,7 +160,15 @@ export default function OfferDetails() {
     return allCreatives.find(c => c.id === selectedCreativeId);
   };
 
-  const renderCreativesTable = (creatives: Creative[], source: 'FB' | 'YT') => {
+  const getSourceLabel = (source: CreativeSource) => {
+    switch (source) {
+      case 'FB': return 'Facebook';
+      case 'YT': return 'YouTube';
+      case 'TT': return 'TikTok';
+    }
+  };
+
+  const renderCreativesTable = (creatives: Creative[], source: CreativeSource) => {
     const filtered = filterAndSortCreatives(creatives);
     
     const SortableHeader = ({ field, children }: { field: SortField; children: React.ReactNode }) => (
@@ -182,7 +191,7 @@ export default function OfferDetails() {
         {/* Header with button */}
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-medium text-muted-foreground">
-            Criativos {source === 'FB' ? 'Facebook' : 'YouTube'}
+            Criativos {getSourceLabel(source)}
           </h3>
           <Dialog open={isCreativeDialogOpen} onOpenChange={setIsCreativeDialogOpen}>
             <DialogTrigger asChild>
@@ -195,7 +204,7 @@ export default function OfferDetails() {
               <DialogHeader>
                 <DialogTitle>Lançar Métrica Diária do Criativo</DialogTitle>
                 <DialogDescription>
-                  Adicione métricas diárias para um criativo de {source === 'FB' ? 'Facebook' : 'YouTube'}
+                  Adicione métricas diárias para um criativo de {getSourceLabel(source)}
                 </DialogDescription>
               </DialogHeader>
               <ScrollArea className="max-h-[60vh] pr-4">
@@ -859,10 +868,11 @@ export default function OfferDetails() {
 
       {/* Tabs */}
       <Tabs defaultValue="daily" className="w-full">
-        <TabsList className="grid w-full grid-cols-3 max-w-md">
+        <TabsList className="grid w-full grid-cols-4 max-w-lg">
           <TabsTrigger value="daily">Resultado Diário</TabsTrigger>
           <TabsTrigger value="fb">Criativos FB</TabsTrigger>
           <TabsTrigger value="yt">Criativos YT</TabsTrigger>
+          <TabsTrigger value="tt">Criativos TT</TabsTrigger>
         </TabsList>
 
         <TabsContent value="daily" className="mt-6">
@@ -976,6 +986,10 @@ export default function OfferDetails() {
 
         <TabsContent value="yt" className="mt-6">
           {renderCreativesTable(ytCreatives, 'YT')}
+        </TabsContent>
+
+        <TabsContent value="tt" className="mt-6">
+          {renderCreativesTable(ttCreatives, 'TT')}
         </TabsContent>
       </Tabs>
     </div>
