@@ -63,6 +63,7 @@ export interface Offer {
     total: number;
     active: number;
     testing: number;
+    paused: number;
   };
 }
 
@@ -142,6 +143,7 @@ export const mockOffers: Offer[] = [
       total: 24,
       active: 12,
       testing: 8,
+      paused: 4,
     },
   },
   {
@@ -171,6 +173,7 @@ export const mockOffers: Offer[] = [
       total: 18,
       active: 8,
       testing: 6,
+      paused: 4,
     },
   },
   {
@@ -200,6 +203,7 @@ export const mockOffers: Offer[] = [
       total: 15,
       active: 5,
       testing: 4,
+      paused: 6,
     },
   },
   {
@@ -229,6 +233,7 @@ export const mockOffers: Offer[] = [
       total: 20,
       active: 14,
       testing: 4,
+      paused: 2,
     },
   },
 ];

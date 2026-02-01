@@ -39,15 +39,15 @@ export function OfferCard({ offer }: OfferCardProps) {
         <div className="space-y-3">
           <div className="space-y-0.5">
             <p className="text-xs text-muted-foreground">Spend Total</p>
-            <p className="text-sm font-semibold">{formatCurrency(offer.metrics.spendTotal)}</p>
+            <p className="text-xs font-semibold">{formatCurrency(offer.metrics.spendTotal)}</p>
           </div>
           <div className="space-y-0.5">
             <p className="text-xs text-muted-foreground">Spend Hoje</p>
-            <p className="text-sm font-medium">{formatCurrency(offer.metrics.spendToday)}</p>
+            <p className="text-xs font-medium">{formatCurrency(offer.metrics.spendToday)}</p>
           </div>
           <div className="space-y-0.5">
             <p className="text-xs text-muted-foreground">Spend 7d</p>
-            <p className="text-sm font-medium">{formatCurrency(offer.metrics.spend7d)}</p>
+            <p className="text-xs font-medium">{formatCurrency(offer.metrics.spend7d)}</p>
           </div>
         </div>
 
@@ -78,12 +78,15 @@ export function OfferCard({ offer }: OfferCardProps) {
       </div>
 
       {/* Footer - Creative Badges */}
-      <div className="flex items-center gap-2 pt-3 border-t border-border">
+      <div className="flex items-center gap-2 pt-3 border-t border-border flex-wrap">
         <Badge variant="secondary" className="text-xs">
           {offer.creativesCount.active} Liberados
         </Badge>
         <Badge variant="outline" className="text-xs">
           {offer.creativesCount.testing} Em Teste
+        </Badge>
+        <Badge variant="outline" className="text-xs text-muted-foreground">
+          {offer.creativesCount.paused || 0} Pausados
         </Badge>
       </div>
     </Card>

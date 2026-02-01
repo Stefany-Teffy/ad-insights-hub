@@ -654,18 +654,19 @@ export default function OffersManagement() {
 
       {/* View Metrics Dialog */}
       <Dialog open={isViewMetricsDialogOpen} onOpenChange={setIsViewMetricsDialogOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Métricas Atuais - {viewingOffer?.name}</DialogTitle>
             <DialogDescription>
-              Visualize os valores atuais de ROAS, IC e CPC
+              Valores atuais e thresholds definidos para ROAS, IC e CPC
             </DialogDescription>
           </DialogHeader>
           {viewingOffer && (
             <div className="grid gap-4 py-4">
-              <div className="grid grid-cols-3 gap-4">
-                <div className="p-4 rounded-lg border">
-                  <p className="text-sm text-muted-foreground mb-1">ROAS</p>
+              {/* ROAS */}
+              <div className="p-4 rounded-lg border">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-sm font-medium">ROAS</p>
                   <div className="flex items-center gap-2">
                     <span className={cn(
                       "text-xl font-bold",
@@ -680,8 +681,26 @@ export default function OffersManagement() {
                     )} />
                   </div>
                 </div>
-                <div className="p-4 rounded-lg border">
-                  <p className="text-sm text-muted-foreground mb-1">IC</p>
+                <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1">
+                    <span className="h-2 w-2 rounded-full bg-success" />
+                    Verde: &gt; {viewingOffer.thresholds.roas.green}
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="h-2 w-2 rounded-full bg-warning" />
+                    Amarelo: {viewingOffer.thresholds.roas.yellow}–{viewingOffer.thresholds.roas.green}
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="h-2 w-2 rounded-full bg-danger" />
+                    Vermelho: &lt; {viewingOffer.thresholds.roas.yellow}
+                  </span>
+                </div>
+              </div>
+
+              {/* IC */}
+              <div className="p-4 rounded-lg border">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-sm font-medium">IC</p>
                   <div className="flex items-center gap-2">
                     {(() => {
                       const avgIc = viewingOffer.dailyMetrics.reduce((sum, m) => sum + m.ic, 0) / viewingOffer.dailyMetrics.length;
@@ -703,8 +722,26 @@ export default function OffersManagement() {
                     })()}
                   </div>
                 </div>
-                <div className="p-4 rounded-lg border">
-                  <p className="text-sm text-muted-foreground mb-1">CPC</p>
+                <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1">
+                    <span className="h-2 w-2 rounded-full bg-success" />
+                    Verde: &lt; R${viewingOffer.thresholds.ic.green}
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="h-2 w-2 rounded-full bg-warning" />
+                    Amarelo: R${viewingOffer.thresholds.ic.green}–R${viewingOffer.thresholds.ic.yellow}
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="h-2 w-2 rounded-full bg-danger" />
+                    Vermelho: &gt; R${viewingOffer.thresholds.ic.yellow}
+                  </span>
+                </div>
+              </div>
+
+              {/* CPC */}
+              <div className="p-4 rounded-lg border">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-sm font-medium">CPC</p>
                   <div className="flex items-center gap-2">
                     {(() => {
                       const avgCpc = viewingOffer.dailyMetrics.reduce((sum, m) => sum + m.cpc, 0) / viewingOffer.dailyMetrics.length;
@@ -725,6 +762,20 @@ export default function OffersManagement() {
                       );
                     })()}
                   </div>
+                </div>
+                <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1">
+                    <span className="h-2 w-2 rounded-full bg-success" />
+                    Verde: &lt; R${viewingOffer.thresholds.cpc.green}
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="h-2 w-2 rounded-full bg-warning" />
+                    Amarelo: R${viewingOffer.thresholds.cpc.green}–R${viewingOffer.thresholds.cpc.yellow}
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="h-2 w-2 rounded-full bg-danger" />
+                    Vermelho: &gt; R${viewingOffer.thresholds.cpc.yellow}
+                  </span>
                 </div>
               </div>
             </div>

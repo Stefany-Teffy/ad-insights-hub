@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, Pencil, Search, Image, ArrowUpDown, CalendarIcon } from 'lucide-react';
+import { Plus, Pencil, Search, Image, ArrowUpDown, CalendarIcon, Copy } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -346,6 +346,7 @@ export default function CreativesManagement() {
               <SelectItem value="all">Todas Fontes</SelectItem>
               <SelectItem value="FB">Facebook</SelectItem>
               <SelectItem value="YT">YouTube</SelectItem>
+              <SelectItem value="TT">TikTok</SelectItem>
             </SelectContent>
           </Select>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
@@ -456,7 +457,23 @@ export default function CreativesManagement() {
                         <Image className="h-4 w-4 text-muted-foreground" />
                       </div>
                     </TableCell>
-                    <TableCell className="font-mono text-sm">{creative.id}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-sm">{creative.id}</span>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6"
+                          onClick={() => {
+                            navigator.clipboard.writeText(creative.id);
+                            import('sonner').then(({ toast }) => toast.success('ID copiado!'));
+                          }}
+                          title="Copiar ID"
+                        >
+                          <Copy className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    </TableCell>
                     <TableCell>{getOfferName(creative.offerId)}</TableCell>
                     <TableCell>
                       <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ${
