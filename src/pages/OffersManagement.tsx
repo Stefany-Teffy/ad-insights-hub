@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { Plus, Pencil, Archive, Search, ArrowUpDown, CalendarIcon } from 'lucide-react';
+import { Plus, Pencil, Search, ArrowUpDown, CalendarIcon, Eye } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Table,
   TableBody,
@@ -45,9 +46,10 @@ import {
 } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { Label } from '@/components/ui/label';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { StatusBadge, MetricBadge } from '@/components/MetricBadge';
 import { mockOffers, niches, countries } from '@/lib/mockData';
-import { formatCurrency, formatRoas, getMetricStatus } from '@/lib/metrics';
+import { formatCurrency, formatRoas, getMetricStatus, getMetricClass } from '@/lib/metrics';
 import { cn } from '@/lib/utils';
 
 type SortField = 'roas' | 'ic' | 'cpc' | 'profit' | 'mc' | 'revenue' | 'spend' | 'date' | null;
@@ -58,6 +60,8 @@ export default function OffersManagement() {
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [isEditSheetOpen, setIsEditSheetOpen] = useState(false);
   const [isConfirmDialogOpen, setIsConfirmDialogOpen] = useState(false);
+  const [isViewMetricsDialogOpen, setIsViewMetricsDialogOpen] = useState(false);
+  const [viewingOffer, setViewingOffer] = useState<typeof mockOffers[0] | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [nicheFilter, setNicheFilter] = useState<string>('all');
   const [countryFilter, setCountryFilter] = useState<string>('all');
@@ -66,6 +70,7 @@ export default function OffersManagement() {
   const [periodFilter, setPeriodFilter] = useState<string>('all');
   const [sortField, setSortField] = useState<SortField>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+  const [customDateRange, setCustomDateRange] = useState<{ from: Date | undefined; to: Date | undefined }>({ from: undefined, to: undefined });
   
   // New offer form state
   const [newOfferDate, setNewOfferDate] = useState<Date>(new Date());
@@ -82,6 +87,14 @@ export default function OffersManagement() {
   const [editNiche, setEditNiche] = useState('');
   const [editCountry, setEditCountry] = useState('');
   const [editStatus, setEditStatus] = useState('');
+  const [editStartDate, setEditStartDate] = useState<Date | undefined>(undefined);
+  const [editFieldsEnabled, setEditFieldsEnabled] = useState({
+    name: false,
+    niche: false,
+    country: false,
+    status: false,
+    startDate: false,
+  });
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -160,7 +173,20 @@ export default function OffersManagement() {
     setEditNiche(offer.niche);
     setEditCountry(offer.country);
     setEditStatus(offer.status);
+    setEditStartDate(new Date(offer.createdAt));
+    setEditFieldsEnabled({
+      name: false,
+      niche: false,
+      country: false,
+      status: false,
+      startDate: false,
+    });
     setIsEditSheetOpen(true);
+  };
+
+  const openViewMetrics = (offer: typeof mockOffers[0]) => {
+    setViewingOffer(offer);
+    setIsViewMetricsDialogOpen(true);
   };
 
   const handleSaveEdit = () => {
@@ -171,10 +197,6 @@ export default function OffersManagement() {
     setIsConfirmDialogOpen(false);
     setIsEditSheetOpen(false);
     setEditingOffer(null);
-  };
-
-  const handleArchive = (offerId: string) => {
-    navigate('/ofertas-arquivadas');
   };
 
   const SortableHeader = ({ field, children, className }: { field: SortField; children: React.ReactNode; className?: string }) => (
@@ -207,213 +229,214 @@ export default function OffersManagement() {
               Nova Oferta
             </Button>
           </SheetTrigger>
-          <SheetContent className="w-[500px] sm:max-w-lg overflow-y-auto">
+          <SheetContent className="w-[500px] sm:max-w-lg">
             <SheetHeader>
               <SheetTitle>Nova Oferta</SheetTitle>
               <SheetDescription>
                 Cadastre uma nova oferta no sistema
               </SheetDescription>
             </SheetHeader>
-            <div className="grid gap-4 py-6">
-              <div className="grid gap-2">
-                <Label htmlFor="name">Nome da Oferta *</Label>
-                <Input id="name" placeholder="Ex: Nutra Max Pro" />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
+            <ScrollArea className="h-[calc(100vh-180px)] pr-4">
+              <div className="grid gap-4 py-6">
                 <div className="grid gap-2">
-                  <Label htmlFor="niche">Nicho *</Label>
-                  <Select>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecione" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {niches.map((niche) => (
-                        <SelectItem key={niche} value={niche}>{niche}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Label htmlFor="name">Nome da Oferta</Label>
+                  <Input id="name" placeholder="Ex: Nutra Max Pro" />
                 </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="country">País *</Label>
-                  <Select>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecione" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {countries.map((country) => (
-                        <SelectItem key={country} value={country}>{country}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor="niche">Nicho</Label>
+                    <Select>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {niches.map((niche) => (
+                          <SelectItem key={niche} value={niche}>{niche}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="country">País</Label>
+                    <Select>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {countries.map((country) => (
+                          <SelectItem key={country} value={country}>{country}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="status">Status</Label>
-                  <Select defaultValue="active">
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="active">Ativo</SelectItem>
-                      <SelectItem value="paused">Pausado</SelectItem>
-                      <SelectItem value="archived">Arquivado</SelectItem>
-                    </SelectContent>
-                  </Select>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor="status">Status</Label>
+                    <Select defaultValue="active">
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="active">Ativo</SelectItem>
+                        <SelectItem value="paused">Pausado</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="date">Data de Início</Label>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          className="w-full justify-start text-left font-normal"
+                        >
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {format(newOfferDate, "dd/MM/yyyy", { locale: ptBR })}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <Calendar
+                          mode="single"
+                          selected={newOfferDate}
+                          onSelect={(date) => date && setNewOfferDate(date)}
+                          initialFocus
+                          className="pointer-events-auto"
+                        />
+                      </PopoverContent>
+                    </Popover>
+                  </div>
                 </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="date">Data de Início</Label>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        className="w-full justify-start text-left font-normal"
-                      >
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {format(newOfferDate, "dd/MM/yyyy", { locale: ptBR })}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar
-                        mode="single"
-                        selected={newOfferDate}
-                        onSelect={(date) => date && setNewOfferDate(date)}
-                        initialFocus
-                        className="pointer-events-auto"
+
+                {/* ROAS Threshold Section */}
+                <div className="pt-4 border-t border-border">
+                  <div className="flex items-center gap-2 mb-2">
+                    <h4 className="text-sm font-medium">Thresholds – ROAS</h4>
+                  </div>
+                  <p className="text-xs text-muted-foreground mb-3">
+                    Defina quando o ROAS é considerado excelente, atenção ou crítico
+                  </p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="grid gap-2">
+                      <Label className="flex items-center gap-2">
+                        <span className="h-2 w-2 rounded-full bg-success" />
+                        Verde (ROAS &gt;)
+                      </Label>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        value={roasGreen}
+                        onChange={(e) => setRoasGreen(e.target.value)}
+                        placeholder="1.30"
+                        className="placeholder:text-muted-foreground/40"
                       />
-                    </PopoverContent>
-                  </Popover>
+                    </div>
+                    <div className="grid gap-2">
+                      <Label className="flex items-center gap-2">
+                        <span className="h-2 w-2 rounded-full bg-warning" />
+                        Amarelo (ROAS &gt;)
+                      </Label>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        value={roasYellow}
+                        onChange={(e) => setRoasYellow(e.target.value)}
+                        placeholder="1.10"
+                        className="placeholder:text-muted-foreground/40"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    ✓ Verde: ROAS &gt; {roasGreen} (ótimo) | ⚠ Amarelo: {roasYellow}–{roasGreen} (atenção) | ✗ Vermelho: &lt; {roasYellow} (crítico)
+                  </p>
                 </div>
-              </div>
 
-              {/* ROAS Threshold Section */}
-              <div className="pt-4 border-t border-border">
-                <div className="flex items-center gap-2 mb-2">
-                  <h4 className="text-sm font-medium">Thresholds – ROAS</h4>
-                </div>
-                <p className="text-xs text-muted-foreground mb-3">
-                  Defina quando o ROAS é considerado excelente, atenção ou crítico
-                </p>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="grid gap-2">
-                    <Label className="flex items-center gap-2">
-                      <span className="h-2 w-2 rounded-full bg-success" />
-                      Verde (ROAS &gt;)
-                    </Label>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      value={roasGreen}
-                      onChange={(e) => setRoasGreen(e.target.value)}
-                      placeholder="1.30"
-                      className="placeholder:text-muted-foreground/40"
-                    />
+                {/* IC Threshold Section */}
+                <div className="pt-4 border-t border-border">
+                  <div className="flex items-center gap-2 mb-2">
+                    <h4 className="text-sm font-medium">Thresholds – IC (Custo por Inicialização)</h4>
                   </div>
-                  <div className="grid gap-2">
-                    <Label className="flex items-center gap-2">
-                      <span className="h-2 w-2 rounded-full bg-warning" />
-                      Amarelo (ROAS &gt;)
-                    </Label>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      value={roasYellow}
-                      onChange={(e) => setRoasYellow(e.target.value)}
-                      placeholder="1.10"
-                      className="placeholder:text-muted-foreground/40"
-                    />
+                  <p className="text-xs text-muted-foreground mb-3">
+                    Defina quando o IC é considerado excelente, atenção ou crítico
+                  </p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="grid gap-2">
+                      <Label className="flex items-center gap-2">
+                        <span className="h-2 w-2 rounded-full bg-success" />
+                        Verde (IC &lt;)
+                      </Label>
+                      <Input
+                        type="number"
+                        value={icGreen}
+                        onChange={(e) => setIcGreen(e.target.value)}
+                        placeholder="50.00"
+                        className="placeholder:text-muted-foreground/40"
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label className="flex items-center gap-2">
+                        <span className="h-2 w-2 rounded-full bg-warning" />
+                        Amarelo (IC &lt;)
+                      </Label>
+                      <Input
+                        type="number"
+                        value={icYellow}
+                        onChange={(e) => setIcYellow(e.target.value)}
+                        placeholder="60.00"
+                        className="placeholder:text-muted-foreground/40"
+                      />
+                    </div>
                   </div>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    ✓ Verde: IC &lt; R${icGreen} (ótimo) | ⚠ Amarelo: R${icGreen}–R${icYellow} (atenção) | ✗ Vermelho: &gt; R${icYellow} (crítico)
+                  </p>
                 </div>
-                <p className="text-xs text-muted-foreground mt-2">
-                  ✓ Verde: ROAS &gt; {roasGreen} (ótimo) | ⚠ Amarelo: {roasYellow}–{roasGreen} (atenção) | ✗ Vermelho: &lt; {roasYellow} (crítico)
-                </p>
-              </div>
 
-              {/* IC Threshold Section */}
-              <div className="pt-4 border-t border-border">
-                <div className="flex items-center gap-2 mb-2">
-                  <h4 className="text-sm font-medium">Thresholds – IC (Custo por Inicialização)</h4>
-                </div>
-                <p className="text-xs text-muted-foreground mb-3">
-                  Defina quando o IC é considerado excelente, atenção ou crítico
-                </p>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="grid gap-2">
-                    <Label className="flex items-center gap-2">
-                      <span className="h-2 w-2 rounded-full bg-success" />
-                      Verde (IC &lt;)
-                    </Label>
-                    <Input
-                      type="number"
-                      value={icGreen}
-                      onChange={(e) => setIcGreen(e.target.value)}
-                      placeholder="50.00"
-                      className="placeholder:text-muted-foreground/40"
-                    />
+                {/* CPC Threshold Section */}
+                <div className="pt-4 border-t border-border">
+                  <div className="flex items-center gap-2 mb-2">
+                    <h4 className="text-sm font-medium">Thresholds – CPC (Custo por Clique)</h4>
                   </div>
-                  <div className="grid gap-2">
-                    <Label className="flex items-center gap-2">
-                      <span className="h-2 w-2 rounded-full bg-warning" />
-                      Amarelo (IC &lt;)
-                    </Label>
-                    <Input
-                      type="number"
-                      value={icYellow}
-                      onChange={(e) => setIcYellow(e.target.value)}
-                      placeholder="60.00"
-                      className="placeholder:text-muted-foreground/40"
-                    />
+                  <p className="text-xs text-muted-foreground mb-3">
+                    Defina quando o CPC é considerado excelente, atenção ou crítico
+                  </p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="grid gap-2">
+                      <Label className="flex items-center gap-2">
+                        <span className="h-2 w-2 rounded-full bg-success" />
+                        Verde (CPC &lt;)
+                      </Label>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        value={cpcGreen}
+                        onChange={(e) => setCpcGreen(e.target.value)}
+                        placeholder="1.50"
+                        className="placeholder:text-muted-foreground/40"
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label className="flex items-center gap-2">
+                        <span className="h-2 w-2 rounded-full bg-warning" />
+                        Amarelo (CPC &lt;)
+                      </Label>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        value={cpcYellow}
+                        onChange={(e) => setCpcYellow(e.target.value)}
+                        placeholder="2.00"
+                        className="placeholder:text-muted-foreground/40"
+                      />
+                    </div>
                   </div>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    ✓ Verde: CPC &lt; R${cpcGreen} (ótimo) | ⚠ Amarelo: R${cpcGreen}–R${cpcYellow} (atenção) | ✗ Vermelho: &gt; R${cpcYellow} (crítico)
+                  </p>
                 </div>
-                <p className="text-xs text-muted-foreground mt-2">
-                  ✓ Verde: IC &lt; R${icGreen} (ótimo) | ⚠ Amarelo: R${icGreen}–R${icYellow} (atenção) | ✗ Vermelho: &gt; R${icYellow} (crítico)
-                </p>
               </div>
-
-              {/* CPC Threshold Section */}
-              <div className="pt-4 border-t border-border">
-                <div className="flex items-center gap-2 mb-2">
-                  <h4 className="text-sm font-medium">Thresholds – CPC (Custo por Clique)</h4>
-                </div>
-                <p className="text-xs text-muted-foreground mb-3">
-                  Defina quando o CPC é considerado excelente, atenção ou crítico
-                </p>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="grid gap-2">
-                    <Label className="flex items-center gap-2">
-                      <span className="h-2 w-2 rounded-full bg-success" />
-                      Verde (CPC &lt;)
-                    </Label>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      value={cpcGreen}
-                      onChange={(e) => setCpcGreen(e.target.value)}
-                      placeholder="1.50"
-                      className="placeholder:text-muted-foreground/40"
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label className="flex items-center gap-2">
-                      <span className="h-2 w-2 rounded-full bg-warning" />
-                      Amarelo (CPC &lt;)
-                    </Label>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      value={cpcYellow}
-                      onChange={(e) => setCpcYellow(e.target.value)}
-                      placeholder="2.00"
-                      className="placeholder:text-muted-foreground/40"
-                    />
-                  </div>
-                </div>
-                <p className="text-xs text-muted-foreground mt-2">
-                  ✓ Verde: CPC &lt; R${cpcGreen} (ótimo) | ⚠ Amarelo: R${cpcGreen}–R${cpcYellow} (atenção) | ✗ Vermelho: &gt; R${cpcYellow} (crítico)
-                </p>
-              </div>
-            </div>
-            <SheetFooter>
+            </ScrollArea>
+            <SheetFooter className="mt-4">
               <Button variant="outline" onClick={() => setIsSheetOpen(false)}>
                 Cancelar
               </Button>
@@ -465,7 +488,6 @@ export default function OffersManagement() {
               <SelectItem value="all">Todos Status</SelectItem>
               <SelectItem value="active">Ativo</SelectItem>
               <SelectItem value="paused">Pausado</SelectItem>
-              <SelectItem value="archived">Arquivado</SelectItem>
             </SelectContent>
           </Select>
           <Select value={healthFilter} onValueChange={setHealthFilter}>
@@ -495,17 +517,46 @@ export default function OffersManagement() {
             </SelectContent>
           </Select>
           <Select value={periodFilter} onValueChange={setPeriodFilter}>
-            <SelectTrigger className="w-[140px]">
+            <SelectTrigger className="w-[150px]">
               <SelectValue placeholder="Período" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Todo Período</SelectItem>
+              <SelectItem value="all">Todos Períodos</SelectItem>
               <SelectItem value="today">Hoje</SelectItem>
               <SelectItem value="7d">Últimos 7d</SelectItem>
               <SelectItem value="30d">Últimos 30d</SelectItem>
               <SelectItem value="custom">Personalizado</SelectItem>
             </SelectContent>
           </Select>
+          {periodFilter === 'custom' && (
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" className="gap-2">
+                  <CalendarIcon className="h-4 w-4" />
+                  {customDateRange.from ? (
+                    customDateRange.to ? (
+                      <>
+                        {format(customDateRange.from, "dd/MM", { locale: ptBR })} - {format(customDateRange.to, "dd/MM", { locale: ptBR })}
+                      </>
+                    ) : (
+                      format(customDateRange.from, "dd/MM/yyyy", { locale: ptBR })
+                    )
+                  ) : (
+                    "Selecionar"
+                  )}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <Calendar
+                  mode="range"
+                  selected={{ from: customDateRange.from, to: customDateRange.to }}
+                  onSelect={(range) => setCustomDateRange({ from: range?.from, to: range?.to })}
+                  numberOfMonths={2}
+                  className="pointer-events-auto"
+                />
+              </PopoverContent>
+            </Popover>
+          )}
         </div>
       </Card>
 
@@ -514,11 +565,11 @@ export default function OffersManagement() {
         <Table>
           <TableHeader>
             <TableRow>
+              <SortableHeader field="date">Data Criação</SortableHeader>
               <TableHead>Nome</TableHead>
               <TableHead>Nicho</TableHead>
               <TableHead>País</TableHead>
               <TableHead>Status</TableHead>
-              <SortableHeader field="date">Data Criação</SortableHeader>
               <SortableHeader field="roas" className="text-right">ROAS</SortableHeader>
               <SortableHeader field="ic" className="text-right">IC</SortableHeader>
               <SortableHeader field="cpc" className="text-right">CPC</SortableHeader>
@@ -537,11 +588,11 @@ export default function OffersManagement() {
 
               return (
                 <TableRow key={offer.id}>
+                  <TableCell>{new Date(offer.createdAt).toLocaleDateString('pt-BR')}</TableCell>
                   <TableCell className="font-medium">{offer.name}</TableCell>
                   <TableCell>{offer.niche}</TableCell>
                   <TableCell>{offer.country}</TableCell>
                   <TableCell><StatusBadge status={offer.status} /></TableCell>
-                  <TableCell>{new Date(offer.createdAt).toLocaleDateString('pt-BR')}</TableCell>
                   <TableCell className="text-right">
                     <MetricBadge
                       value={offer.metrics.roasTotal}
@@ -578,17 +629,19 @@ export default function OffersManagement() {
                         variant="ghost" 
                         size="icon" 
                         className="h-8 w-8"
-                        onClick={() => openEditSheet(offer)}
+                        onClick={() => openViewMetrics(offer)}
+                        title="Ver métricas"
                       >
-                        <Pencil className="h-4 w-4" />
+                        <Eye className="h-4 w-4" />
                       </Button>
                       <Button 
                         variant="ghost" 
                         size="icon" 
-                        className="h-8 w-8 text-warning hover:text-warning"
-                        onClick={() => handleArchive(offer.id)}
+                        className="h-8 w-8"
+                        onClick={() => openEditSheet(offer)}
+                        title="Editar oferta"
                       >
-                        <Archive className="h-4 w-4" />
+                        <Pencil className="h-4 w-4" />
                       </Button>
                     </div>
                   </TableCell>
@@ -599,67 +652,244 @@ export default function OffersManagement() {
         </Table>
       </Card>
 
+      {/* View Metrics Dialog */}
+      <Dialog open={isViewMetricsDialogOpen} onOpenChange={setIsViewMetricsDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Métricas Atuais - {viewingOffer?.name}</DialogTitle>
+            <DialogDescription>
+              Visualize os valores atuais de ROAS, IC e CPC
+            </DialogDescription>
+          </DialogHeader>
+          {viewingOffer && (
+            <div className="grid gap-4 py-4">
+              <div className="grid grid-cols-3 gap-4">
+                <div className="p-4 rounded-lg border">
+                  <p className="text-sm text-muted-foreground mb-1">ROAS</p>
+                  <div className="flex items-center gap-2">
+                    <span className={cn(
+                      "text-xl font-bold",
+                      getMetricClass(getMetricStatus(viewingOffer.metrics.roasTotal, 'roas', viewingOffer.thresholds))
+                    )}>
+                      {formatRoas(viewingOffer.metrics.roasTotal)}
+                    </span>
+                    <span className={cn(
+                      "h-3 w-3 rounded-full",
+                      getMetricStatus(viewingOffer.metrics.roasTotal, 'roas', viewingOffer.thresholds) === 'success' ? 'bg-success' :
+                      getMetricStatus(viewingOffer.metrics.roasTotal, 'roas', viewingOffer.thresholds) === 'warning' ? 'bg-warning' : 'bg-danger'
+                    )} />
+                  </div>
+                </div>
+                <div className="p-4 rounded-lg border">
+                  <p className="text-sm text-muted-foreground mb-1">IC</p>
+                  <div className="flex items-center gap-2">
+                    {(() => {
+                      const avgIc = viewingOffer.dailyMetrics.reduce((sum, m) => sum + m.ic, 0) / viewingOffer.dailyMetrics.length;
+                      return (
+                        <>
+                          <span className={cn(
+                            "text-xl font-bold",
+                            getMetricClass(getMetricStatus(avgIc, 'ic', viewingOffer.thresholds))
+                          )}>
+                            {formatCurrency(avgIc)}
+                          </span>
+                          <span className={cn(
+                            "h-3 w-3 rounded-full",
+                            getMetricStatus(avgIc, 'ic', viewingOffer.thresholds) === 'success' ? 'bg-success' :
+                            getMetricStatus(avgIc, 'ic', viewingOffer.thresholds) === 'warning' ? 'bg-warning' : 'bg-danger'
+                          )} />
+                        </>
+                      );
+                    })()}
+                  </div>
+                </div>
+                <div className="p-4 rounded-lg border">
+                  <p className="text-sm text-muted-foreground mb-1">CPC</p>
+                  <div className="flex items-center gap-2">
+                    {(() => {
+                      const avgCpc = viewingOffer.dailyMetrics.reduce((sum, m) => sum + m.cpc, 0) / viewingOffer.dailyMetrics.length;
+                      return (
+                        <>
+                          <span className={cn(
+                            "text-xl font-bold",
+                            getMetricClass(getMetricStatus(avgCpc, 'cpc', viewingOffer.thresholds))
+                          )}>
+                            {formatCurrency(avgCpc)}
+                          </span>
+                          <span className={cn(
+                            "h-3 w-3 rounded-full",
+                            getMetricStatus(avgCpc, 'cpc', viewingOffer.thresholds) === 'success' ? 'bg-success' :
+                            getMetricStatus(avgCpc, 'cpc', viewingOffer.thresholds) === 'warning' ? 'bg-warning' : 'bg-danger'
+                          )} />
+                        </>
+                      );
+                    })()}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button onClick={() => setIsViewMetricsDialogOpen(false)}>Fechar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Edit Sheet */}
       <Sheet open={isEditSheetOpen} onOpenChange={setIsEditSheetOpen}>
-        <SheetContent className="w-[500px] sm:max-w-lg overflow-y-auto">
+        <SheetContent className="w-[500px] sm:max-w-lg">
           <SheetHeader>
             <SheetTitle>Editar Oferta</SheetTitle>
             <SheetDescription>
-              Altere as informações da oferta
+              Selecione os campos que deseja editar
             </SheetDescription>
           </SheetHeader>
-          <div className="grid gap-4 py-6">
-            <div className="grid gap-2">
-              <Label htmlFor="edit-name">Nome da Oferta *</Label>
-              <Input 
-                id="edit-name" 
-                value={editName}
-                onChange={(e) => setEditName(e.target.value)}
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
+          <ScrollArea className="h-[calc(100vh-180px)] pr-4">
+            <div className="grid gap-4 py-6">
+              {/* Name field */}
               <div className="grid gap-2">
-                <Label htmlFor="edit-niche">Nicho *</Label>
-                <Select value={editNiche} onValueChange={setEditNiche}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecione" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {niches.map((niche) => (
-                      <SelectItem key={niche} value={niche}>{niche}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="edit-name-check"
+                    checked={editFieldsEnabled.name}
+                    onCheckedChange={(checked) => setEditFieldsEnabled(prev => ({ ...prev, name: !!checked }))}
+                  />
+                  <Label htmlFor="edit-name-check">Nome da Oferta</Label>
+                </div>
+                <Input 
+                  id="edit-name" 
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  disabled={!editFieldsEnabled.name}
+                  className={!editFieldsEnabled.name ? 'bg-muted' : ''}
+                />
               </div>
+
+              {/* Niche and Country */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="edit-niche-check"
+                      checked={editFieldsEnabled.niche}
+                      onCheckedChange={(checked) => setEditFieldsEnabled(prev => ({ ...prev, niche: !!checked }))}
+                    />
+                    <Label htmlFor="edit-niche-check">Nicho</Label>
+                  </div>
+                  <Select 
+                    value={editNiche} 
+                    onValueChange={setEditNiche}
+                    disabled={!editFieldsEnabled.niche}
+                  >
+                    <SelectTrigger className={!editFieldsEnabled.niche ? 'bg-muted' : ''}>
+                      <SelectValue placeholder="Selecione" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {niches.map((niche) => (
+                        <SelectItem key={niche} value={niche}>{niche}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid gap-2">
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="edit-country-check"
+                      checked={editFieldsEnabled.country}
+                      onCheckedChange={(checked) => setEditFieldsEnabled(prev => ({ ...prev, country: !!checked }))}
+                    />
+                    <Label htmlFor="edit-country-check">País</Label>
+                  </div>
+                  <Select 
+                    value={editCountry} 
+                    onValueChange={setEditCountry}
+                    disabled={!editFieldsEnabled.country}
+                  >
+                    <SelectTrigger className={!editFieldsEnabled.country ? 'bg-muted' : ''}>
+                      <SelectValue placeholder="Selecione" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {countries.map((country) => (
+                        <SelectItem key={country} value={country}>{country}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {/* Status and Start Date */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="edit-status-check"
+                      checked={editFieldsEnabled.status}
+                      onCheckedChange={(checked) => setEditFieldsEnabled(prev => ({ ...prev, status: !!checked }))}
+                    />
+                    <Label htmlFor="edit-status-check">Status</Label>
+                  </div>
+                  <Select 
+                    value={editStatus} 
+                    onValueChange={setEditStatus}
+                    disabled={!editFieldsEnabled.status}
+                  >
+                    <SelectTrigger className={!editFieldsEnabled.status ? 'bg-muted' : ''}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="active">Ativo</SelectItem>
+                      <SelectItem value="paused">Pausado</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid gap-2">
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="edit-start-date-check"
+                      checked={editFieldsEnabled.startDate}
+                      onCheckedChange={(checked) => setEditFieldsEnabled(prev => ({ ...prev, startDate: !!checked }))}
+                    />
+                    <Label htmlFor="edit-start-date-check">Data de Início</Label>
+                  </div>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className={cn(
+                          "w-full justify-start text-left font-normal",
+                          !editFieldsEnabled.startDate && 'bg-muted'
+                        )}
+                        disabled={!editFieldsEnabled.startDate}
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {editStartDate ? format(editStartDate, "dd/MM/yyyy", { locale: ptBR }) : "Selecionar"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar
+                        mode="single"
+                        selected={editStartDate}
+                        onSelect={setEditStartDate}
+                        initialFocus
+                        className="pointer-events-auto"
+                      />
+                    </PopoverContent>
+                  </Popover>
+                </div>
+              </div>
+
+              {/* Edit date (locked) */}
               <div className="grid gap-2">
-                <Label htmlFor="edit-country">País *</Label>
-                <Select value={editCountry} onValueChange={setEditCountry}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecione" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {countries.map((country) => (
-                      <SelectItem key={country} value={country}>{country}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label className="text-muted-foreground">Data de Edição</Label>
+                <Input 
+                  value={format(new Date(), "dd/MM/yyyy", { locale: ptBR })}
+                  disabled 
+                  className="bg-muted" 
+                />
               </div>
             </div>
-            <div className="grid gap-2">
-              <Label htmlFor="edit-status">Status</Label>
-              <Select value={editStatus} onValueChange={setEditStatus}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="active">Ativo</SelectItem>
-                  <SelectItem value="paused">Pausado</SelectItem>
-                  <SelectItem value="archived">Arquivado</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <SheetFooter>
+          </ScrollArea>
+          <SheetFooter className="mt-4">
             <Button variant="outline" onClick={() => setIsEditSheetOpen(false)}>
               Cancelar
             </Button>
