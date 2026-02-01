@@ -1,7 +1,5 @@
 import { useState } from 'react';
-import { RefreshCw, Search, Filter, CalendarIcon } from 'lucide-react';
-import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
+import { RefreshCw, Search, Filter } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -11,46 +9,29 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
-import { Calendar } from '@/components/ui/calendar';
 import { KPIDualCard } from '@/components/KPICard';
 import { OfferCard } from '@/components/OfferCard';
 import { mockOffers, niches, countries, calculateTotals } from '@/lib/mockData';
 import { formatCurrency, formatRoas, getMetricStatus } from '@/lib/metrics';
-import { cn } from '@/lib/utils';
-import type { DateRange } from 'react-day-picker';
-
-const statusOptions = [
-  { value: 'all', label: 'Todos Status' },
-  { value: 'active', label: 'Ativo' },
-  { value: 'paused', label: 'Pausado' },
-  { value: 'archived', label: 'Arquivado' },
-];
 
 export default function Dashboard() {
   const [searchQuery, setSearchQuery] = useState('');
   const [nicheFilter, setNicheFilter] = useState<string>('all');
   const [countryFilter, setCountryFilter] = useState<string>('all');
   const [healthFilter, setHealthFilter] = useState<string>('all');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
 
   const totals = calculateTotals();
 
-  // Filter offers
+  // Filter offers - only show active offers
   const filteredOffers = mockOffers.filter((offer) => {
     const matchesSearch = offer.name.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesNiche = nicheFilter === 'all' || offer.niche === nicheFilter;
     const matchesCountry = countryFilter === 'all' || offer.country === countryFilter;
-    const matchesStatus = statusFilter === 'all' || offer.status === statusFilter;
+    const matchesActive = offer.status === 'active'; // Only show active offers
     const health = getMetricStatus(offer.metrics.roasTotal, 'roas', offer.thresholds);
     const matchesHealth = healthFilter === 'all' || health === healthFilter;
     
-    return matchesSearch && matchesNiche && matchesCountry && matchesStatus && matchesHealth;
+    return matchesSearch && matchesNiche && matchesCountry && matchesActive && matchesHealth;
   });
 
   return (
@@ -137,16 +118,6 @@ export default function Dashboard() {
             ))}
           </SelectContent>
         </Select>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-[150px]">
-            <SelectValue placeholder="Status" />
-          </SelectTrigger>
-          <SelectContent>
-            {statusOptions.map((status) => (
-              <SelectItem key={status.value} value={status.value}>{status.label}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
         <Select value={healthFilter} onValueChange={setHealthFilter}>
           <SelectTrigger className="w-[150px]">
             <SelectValue placeholder="Saúde" />
@@ -173,42 +144,6 @@ export default function Dashboard() {
             </SelectItem>
           </SelectContent>
         </Select>
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button
-              variant="outline"
-              className={cn(
-                "w-[200px] justify-start text-left font-normal",
-                !dateRange && "text-muted-foreground"
-              )}
-            >
-              <CalendarIcon className="mr-2 h-4 w-4" />
-              {dateRange?.from ? (
-                dateRange.to ? (
-                  <>
-                    {format(dateRange.from, "dd/MM", { locale: ptBR })} -{" "}
-                    {format(dateRange.to, "dd/MM", { locale: ptBR })}
-                  </>
-                ) : (
-                  format(dateRange.from, "dd/MM/yyyy", { locale: ptBR })
-                )
-              ) : (
-                <span>Período</span>
-              )}
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-auto p-0" align="start">
-            <Calendar
-              initialFocus
-              mode="range"
-              defaultMonth={dateRange?.from}
-              selected={dateRange}
-              onSelect={setDateRange}
-              numberOfMonths={2}
-              className="pointer-events-auto"
-            />
-          </PopoverContent>
-        </Popover>
       </div>
 
       {/* Offer Cards Grid */}
