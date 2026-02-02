@@ -565,7 +565,7 @@ export default function OffersManagement() {
         <Table>
           <TableHeader>
             <TableRow>
-              <SortableHeader field="date">Data Criação</SortableHeader>
+              <SortableHeader field="date">Data</SortableHeader>
               <TableHead>Nome</TableHead>
               <TableHead>Nicho</TableHead>
               <TableHead>País</TableHead>

@@ -418,7 +418,7 @@ export default function OfferDetails() {
             </SelectContent>
           </Select>
           <Select value={copyFilter} onValueChange={setCopyFilter}>
-            <SelectTrigger className="w-[150px]">
+            <SelectTrigger className="w-[180px]">
               <SelectValue placeholder="Copywriter" />
             </SelectTrigger>
             <SelectContent>
