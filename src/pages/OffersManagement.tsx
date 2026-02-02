@@ -50,6 +50,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { StatusBadge, MetricBadge } from '@/components/MetricBadge';
 import { CreatableCombobox } from '@/components/ui/creatable-combobox';
 import { PeriodoFilter, usePeriodo, type PeriodoValue } from '@/components/PeriodoFilter';
+import { ThresholdsDialog } from '@/components/ThresholdsDialog';
 import { formatCurrency, formatRoas, getMetricStatus, getMetricClass } from '@/lib/metrics';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
@@ -101,7 +102,7 @@ export default function OffersManagement() {
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [isEditSheetOpen, setIsEditSheetOpen] = useState(false);
   const [isConfirmDialogOpen, setIsConfirmDialogOpen] = useState(false);
-  const [isViewMetricsDialogOpen, setIsViewMetricsDialogOpen] = useState(false);
+  const [isThresholdsDialogOpen, setIsThresholdsDialogOpen] = useState(false);
   const [viewingOffer, setViewingOffer] = useState<OfertaComMetricas | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [nicheFilter, setNicheFilter] = useState<string>('all');
@@ -323,9 +324,9 @@ export default function OffersManagement() {
     setIsEditSheetOpen(true);
   };
 
-  const openViewMetrics = (offer: OfertaComMetricas) => {
+  const openThresholdsDialog = (offer: OfertaComMetricas) => {
     setViewingOffer(offer);
-    setIsViewMetricsDialogOpen(true);
+    setIsThresholdsDialogOpen(true);
   };
 
   const handleSaveEdit = () => {
@@ -823,7 +824,7 @@ export default function OffersManagement() {
                             variant="ghost" 
                             size="icon" 
                             className="h-8 w-8"
-                            onClick={() => openViewMetrics(offer)}
+                            onClick={() => openThresholdsDialog(offer)}
                             title="Ver métricas"
                           >
                             <Eye className="h-4 w-4" />
@@ -848,135 +849,17 @@ export default function OffersManagement() {
         </Card>
       )}
 
-      {/* View Metrics Dialog */}
-      <Dialog open={isViewMetricsDialogOpen} onOpenChange={setIsViewMetricsDialogOpen}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Métricas Atuais - {viewingOffer?.nome}</DialogTitle>
-            <DialogDescription>
-              Valores atuais e thresholds definidos para ROAS, IC e CPC
-            </DialogDescription>
-          </DialogHeader>
-          {viewingOffer && (() => {
-            const thresholds = parseThresholds(viewingOffer.thresholds);
-            const metricas = viewingOffer.metricas || { roas: 0, ic: 0, cpc: 0 };
-            const displayThresholds = {
-              roas: { green: thresholds.roas.verde, yellow: thresholds.roas.amarelo },
-              ic: { green: thresholds.ic.verde, yellow: thresholds.ic.amarelo },
-              cpc: { green: thresholds.cpc.verde, yellow: thresholds.cpc.amarelo },
-            };
-            
-            return (
-              <div className="grid gap-4 py-4">
-                {/* ROAS */}
-                <div className="p-4 rounded-lg border">
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="text-sm font-medium">ROAS</p>
-                    <div className="flex items-center gap-2">
-                      <span className={cn(
-                        "text-xl font-bold",
-                        getMetricClass(getMetricStatus(metricas.roas, 'roas', displayThresholds))
-                      )}>
-                        {formatRoas(metricas.roas)}
-                      </span>
-                      <span className={cn(
-                        "h-3 w-3 rounded-full",
-                        getMetricStatus(metricas.roas, 'roas', displayThresholds) === 'success' ? 'bg-success' :
-                        getMetricStatus(metricas.roas, 'roas', displayThresholds) === 'warning' ? 'bg-warning' : 'bg-danger'
-                      )} />
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                    <span className="flex items-center gap-1">
-                      <span className="h-2 w-2 rounded-full bg-success" />
-                      Verde: &gt; {thresholds.roas.verde}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <span className="h-2 w-2 rounded-full bg-warning" />
-                      Amarelo: {thresholds.roas.amarelo}–{thresholds.roas.verde}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <span className="h-2 w-2 rounded-full bg-danger" />
-                      Vermelho: &lt; {thresholds.roas.amarelo}
-                    </span>
-                  </div>
-                </div>
-
-                {/* IC */}
-                <div className="p-4 rounded-lg border">
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="text-sm font-medium">IC</p>
-                    <div className="flex items-center gap-2">
-                      <span className={cn(
-                        "text-xl font-bold",
-                        getMetricClass(getMetricStatus(metricas.ic, 'ic', displayThresholds))
-                      )}>
-                        {formatCurrency(metricas.ic)}
-                      </span>
-                      <span className={cn(
-                        "h-3 w-3 rounded-full",
-                        getMetricStatus(metricas.ic, 'ic', displayThresholds) === 'success' ? 'bg-success' :
-                        getMetricStatus(metricas.ic, 'ic', displayThresholds) === 'warning' ? 'bg-warning' : 'bg-danger'
-                      )} />
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                    <span className="flex items-center gap-1">
-                      <span className="h-2 w-2 rounded-full bg-success" />
-                      Verde: &lt; R${thresholds.ic.verde}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <span className="h-2 w-2 rounded-full bg-warning" />
-                      Amarelo: R${thresholds.ic.verde}–R${thresholds.ic.amarelo}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <span className="h-2 w-2 rounded-full bg-danger" />
-                      Vermelho: &gt; R${thresholds.ic.amarelo}
-                    </span>
-                  </div>
-                </div>
-
-                {/* CPC */}
-                <div className="p-4 rounded-lg border">
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="text-sm font-medium">CPC</p>
-                    <div className="flex items-center gap-2">
-                      <span className={cn(
-                        "text-xl font-bold",
-                        getMetricClass(getMetricStatus(metricas.cpc, 'cpc', displayThresholds))
-                      )}>
-                        {formatCurrency(metricas.cpc)}
-                      </span>
-                      <span className={cn(
-                        "h-3 w-3 rounded-full",
-                        getMetricStatus(metricas.cpc, 'cpc', displayThresholds) === 'success' ? 'bg-success' :
-                        getMetricStatus(metricas.cpc, 'cpc', displayThresholds) === 'warning' ? 'bg-warning' : 'bg-danger'
-                      )} />
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                    <span className="flex items-center gap-1">
-                      <span className="h-2 w-2 rounded-full bg-success" />
-                      Verde: &lt; R${thresholds.cpc.verde}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <span className="h-2 w-2 rounded-full bg-warning" />
-                      Amarelo: R${thresholds.cpc.verde}–R${thresholds.cpc.amarelo}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <span className="h-2 w-2 rounded-full bg-danger" />
-                      Vermelho: &gt; R${thresholds.cpc.amarelo}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            );
-          })()}
-          <DialogFooter>
-            <Button onClick={() => setIsViewMetricsDialogOpen(false)}>Fechar</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Thresholds Dialog */}
+      <ThresholdsDialog
+        open={isThresholdsDialogOpen}
+        onOpenChange={setIsThresholdsDialogOpen}
+        oferta={viewingOffer}
+        metricas={{
+          roas: viewingOffer?.metricas?.roas || 0,
+          ic: viewingOffer?.metricas?.ic || 0,
+          cpc: viewingOffer?.metricas?.cpc || 0,
+        }}
+      />
 
       {/* Edit Sheet */}
       <Sheet open={isEditSheetOpen} onOpenChange={setIsEditSheetOpen}>

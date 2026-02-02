@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Search, ArrowUpDown, Copy, RefreshCw, Loader2, Plus } from 'lucide-react';
+import { ArrowLeft, Search, ArrowUpDown, Copy, RefreshCw, Loader2, Plus, Settings } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
@@ -25,6 +25,7 @@ import { KPICard } from '@/components/KPICard';
 import { MetricBadge } from '@/components/MetricBadge';
 import { LancarMetricaDialog } from '@/components/LancarMetricaDialog';
 import { PeriodoFilter, usePeriodo, type PeriodoValue } from '@/components/PeriodoFilter';
+import { ThresholdsDialog } from '@/components/ThresholdsDialog';
 import { formatCurrency, formatRoas, getMetricStatus, getMetricClass } from '@/lib/metrics';
 import { parseThresholds, type Thresholds, type Criativo, type MetricaDiariaOferta } from '@/services/api';
 import { useOferta, useMetricasOferta, useCriativosPorOferta, useCopywriters } from '@/hooks/useSupabase';
@@ -80,6 +81,7 @@ export default function OfferDetails() {
   // Dialog states
   const [isLancarMetricaOpen, setIsLancarMetricaOpen] = useState(false);
   const [lancarMetricaFonte, setLancarMetricaFonte] = useState<string | undefined>(undefined);
+  const [isThresholdsDialogOpen, setIsThresholdsDialogOpen] = useState(false);
 
   // Supabase hooks - pass periodo for filtering
   const { data: oferta, isLoading: isLoadingOferta, refetch: refetchOferta } = useOferta(id || '');
@@ -370,6 +372,10 @@ export default function OfferDetails() {
           <h1 className="text-2xl font-bold text-foreground">{oferta.nome}</h1>
           <p className="text-sm text-muted-foreground">{oferta.nicho} • {oferta.pais}</p>
         </div>
+        <Button variant="outline" className="gap-2" onClick={() => setIsThresholdsDialogOpen(true)}>
+          <Settings className="h-4 w-4" />
+          Métricas Esperadas
+        </Button>
         <Button variant="outline" className="gap-2" onClick={handleRefreshAll}>
           <RefreshCw className="h-4 w-4" />
           Atualizar
@@ -524,6 +530,18 @@ export default function OfferDetails() {
         onOpenChange={setIsLancarMetricaOpen}
         ofertaId={id || ''}
         fonte={lancarMetricaFonte}
+      />
+
+      {/* Thresholds Dialog */}
+      <ThresholdsDialog
+        open={isThresholdsDialogOpen}
+        onOpenChange={setIsThresholdsDialogOpen}
+        oferta={oferta}
+        metricas={{
+          roas: totals.roas,
+          ic: 0, // Placeholder - would need to calculate from metrics
+          cpc: 0, // Placeholder - would need to calculate from metrics
+        }}
       />
     </div>
   );
