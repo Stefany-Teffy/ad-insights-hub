@@ -262,7 +262,7 @@ export default function CreativesManagement() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="active">Ativo</SelectItem>
+                        <SelectItem value="active">Liberado</SelectItem>
                         <SelectItem value="testing">Em Teste</SelectItem>
                         <SelectItem value="paused">Pausado</SelectItem>
                         <SelectItem value="not_validated">Não Validado</SelectItem>
@@ -357,7 +357,7 @@ export default function CreativesManagement() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todos Status</SelectItem>
-              <SelectItem value="active">Ativo</SelectItem>
+              <SelectItem value="active">Liberado</SelectItem>
               <SelectItem value="testing">Em Teste</SelectItem>
               <SelectItem value="not_validated">Não Validado</SelectItem>
               <SelectItem value="paused">Pausado</SelectItem>
@@ -663,7 +663,7 @@ export default function CreativesManagement() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="active">Ativo</SelectItem>
+                      <SelectItem value="active">Liberado</SelectItem>
                       <SelectItem value="testing">Em Teste</SelectItem>
                       <SelectItem value="paused">Pausado</SelectItem>
                       <SelectItem value="not_validated">Não Validado</SelectItem>

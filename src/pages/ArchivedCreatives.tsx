@@ -524,7 +524,7 @@ export default function ArchivedCreatives() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="active">Ativo</SelectItem>
+                      <SelectItem value="active">Liberado</SelectItem>
                       <SelectItem value="testing">Em Teste</SelectItem>
                       <SelectItem value="paused">Pausado</SelectItem>
                       <SelectItem value="not_validated">Não Validado</SelectItem>
