@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, Pencil, Search, Image, ArrowUpDown, CalendarIcon, Copy, RefreshCw, Loader2 } from 'lucide-react';
+import { Plus, Pencil, Search, Image, ArrowUpDown, Copy, RefreshCw, Loader2, CalendarIcon } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -43,6 +43,7 @@ import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { MetricBadge } from '@/components/MetricBadge';
 import { CreatableCombobox } from '@/components/ui/creatable-combobox';
+import { PeriodoFilter, usePeriodo, type PeriodoValue } from '@/components/PeriodoFilter';
 import { formatCurrency, formatRoas } from '@/lib/metrics';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
@@ -139,10 +140,9 @@ export default function CreativesManagement() {
   const [sourceFilter, setSourceFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [copywriterFilter, setCopywriterFilter] = useState<string>('all');
-  const [periodFilter, setPeriodFilter] = useState<string>('all');
+  const { periodo, setPeriodo } = usePeriodo('7d');
   const [sortField, setSortField] = useState<SortField>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
-  const [customDateRange, setCustomDateRange] = useState<{ from: Date | undefined; to: Date | undefined }>({ from: undefined, to: undefined });
 
   // New creative form state
   const [newOferta, setNewOferta] = useState('');
@@ -596,47 +596,11 @@ export default function CreativesManagement() {
               ))}
             </SelectContent>
           </Select>
-          <Select value={periodFilter} onValueChange={setPeriodFilter}>
-            <SelectTrigger className="w-[150px]">
-              <SelectValue placeholder="Período" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos Períodos</SelectItem>
-              <SelectItem value="today">Hoje</SelectItem>
-              <SelectItem value="7d">Últimos 7d</SelectItem>
-              <SelectItem value="30d">Últimos 30d</SelectItem>
-              <SelectItem value="custom">Personalizado</SelectItem>
-            </SelectContent>
-          </Select>
-          {periodFilter === 'custom' && (
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button variant="outline" className="gap-2">
-                  <CalendarIcon className="h-4 w-4" />
-                  {customDateRange.from ? (
-                    customDateRange.to ? (
-                      <>
-                        {format(customDateRange.from, "dd/MM", { locale: ptBR })} - {format(customDateRange.to, "dd/MM", { locale: ptBR })}
-                      </>
-                    ) : (
-                      format(customDateRange.from, "dd/MM/yyyy", { locale: ptBR })
-                    )
-                  ) : (
-                    "Selecionar"
-                  )}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0" align="start">
-                <Calendar
-                  mode="range"
-                  selected={{ from: customDateRange.from, to: customDateRange.to }}
-                  onSelect={(range) => setCustomDateRange({ from: range?.from, to: range?.to })}
-                  numberOfMonths={2}
-                  className="pointer-events-auto"
-                />
-              </PopoverContent>
-            </Popover>
-          )}
+          <PeriodoFilter 
+            value={periodo} 
+            onChange={setPeriodo}
+            showAllOption
+          />
         </div>
       </Card>
 

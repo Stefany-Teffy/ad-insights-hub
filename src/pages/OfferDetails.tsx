@@ -1,8 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Search, ArrowUpDown, CalendarIcon, Copy, RefreshCw, Loader2, Plus } from 'lucide-react';
-import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
+import { ArrowLeft, Search, ArrowUpDown, Copy, RefreshCw, Loader2, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
@@ -22,16 +20,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
-import { Calendar } from '@/components/ui/calendar';
 import { Badge } from '@/components/ui/badge';
 import { KPICard } from '@/components/KPICard';
 import { MetricBadge } from '@/components/MetricBadge';
 import { LancarMetricaDialog } from '@/components/LancarMetricaDialog';
+import { PeriodoFilter, usePeriodo, type PeriodoValue } from '@/components/PeriodoFilter';
 import { formatCurrency, formatRoas, getMetricStatus, getMetricClass } from '@/lib/metrics';
 import { parseThresholds, type Thresholds, type Criativo, type MetricaDiariaOferta } from '@/services/api';
 import { useOferta, useMetricasOferta, useCriativosPorOferta, useCopywriters } from '@/hooks/useSupabase';
@@ -78,20 +71,19 @@ export default function OfferDetails() {
   
   // Filter states
   const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [dailyPeriodFilter, setDailyPeriodFilter] = useState<string>('all');
+  const { periodo, setPeriodo } = usePeriodo('7d');
   const [copyFilter, setCopyFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [sortField, setSortField] = useState<SortField>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
-  const [dailyCustomDateRange, setDailyCustomDateRange] = useState<{ from: Date | undefined; to: Date | undefined }>({ from: undefined, to: undefined });
   
   // Dialog states
   const [isLancarMetricaOpen, setIsLancarMetricaOpen] = useState(false);
   const [lancarMetricaFonte, setLancarMetricaFonte] = useState<string | undefined>(undefined);
 
-  // Supabase hooks
+  // Supabase hooks - pass periodo for filtering
   const { data: oferta, isLoading: isLoadingOferta, refetch: refetchOferta } = useOferta(id || '');
-  const { data: metricasOferta, isLoading: isLoadingMetricas, refetch: refetchMetricas } = useMetricasOferta(id || '', dailyPeriodFilter !== 'custom' ? dailyPeriodFilter : undefined);
+  const { data: metricasOferta, isLoading: isLoadingMetricas, refetch: refetchMetricas } = useMetricasOferta(id || '', periodo.tipo !== 'custom' ? periodo.tipo : undefined);
   const { data: criativosFB, isLoading: isLoadingFB, refetch: refetchFB } = useCriativosPorOferta(id || '', 'facebook');
   const { data: criativosYT, isLoading: isLoadingYT, refetch: refetchYT } = useCriativosPorOferta(id || '', 'youtube');
   const { data: criativosTT, isLoading: isLoadingTT, refetch: refetchTT } = useCriativosPorOferta(id || '', 'tiktok');
@@ -128,24 +120,24 @@ export default function OfferDetails() {
     return { spend, faturado, roas, lucro };
   }, [metricasOferta]);
 
-  // Filter daily metrics by custom date range
+  // Filter daily metrics by date range
   const filteredDailyMetrics = useMemo(() => {
     if (!metricasOferta) return [];
     
     let filtered = [...metricasOferta];
     
-    if (dailyPeriodFilter === 'custom' && dailyCustomDateRange.from) {
-      filtered = filtered.filter((m) => {
-        const metricDate = new Date(m.data);
-        const from = dailyCustomDateRange.from!;
-        const to = dailyCustomDateRange.to || from;
-        return metricDate >= from && metricDate <= to;
-      });
-    }
+    // Apply date filter
+    const startDate = new Date(periodo.dataInicio);
+    const endDate = new Date(periodo.dataFim);
+    
+    filtered = filtered.filter((m) => {
+      const metricDate = new Date(m.data);
+      return metricDate >= startDate && metricDate <= endDate;
+    });
     
     // Sort by date descending
     return filtered.sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime());
-  }, [metricasOferta, dailyPeriodFilter, dailyCustomDateRange]);
+  }, [metricasOferta, periodo.dataInicio, periodo.dataFim]);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -426,47 +418,11 @@ export default function OfferDetails() {
           <div className="space-y-4">
             {/* Period filter for daily results */}
             <div className="flex items-center gap-3">
-              <Select value={dailyPeriodFilter} onValueChange={setDailyPeriodFilter}>
-                <SelectTrigger className="w-[150px]">
-                  <SelectValue placeholder="Período" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos Períodos</SelectItem>
-                  <SelectItem value="today">Hoje</SelectItem>
-                  <SelectItem value="7d">Últimos 7d</SelectItem>
-                  <SelectItem value="30d">Últimos 30d</SelectItem>
-                  <SelectItem value="custom">Personalizado</SelectItem>
-                </SelectContent>
-              </Select>
-              {dailyPeriodFilter === 'custom' && (
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button variant="outline" className="gap-2">
-                      <CalendarIcon className="h-4 w-4" />
-                      {dailyCustomDateRange.from ? (
-                        dailyCustomDateRange.to ? (
-                          <>
-                            {format(dailyCustomDateRange.from, "dd/MM", { locale: ptBR })} - {format(dailyCustomDateRange.to, "dd/MM", { locale: ptBR })}
-                          </>
-                        ) : (
-                          format(dailyCustomDateRange.from, "dd/MM/yyyy", { locale: ptBR })
-                        )
-                      ) : (
-                        "Selecionar"
-                      )}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start" side="bottom" sideOffset={8}>
-                    <Calendar
-                      mode="range"
-                      selected={{ from: dailyCustomDateRange.from, to: dailyCustomDateRange.to }}
-                      onSelect={(range) => setDailyCustomDateRange({ from: range?.from, to: range?.to })}
-                      numberOfMonths={2}
-                      className="pointer-events-auto"
-                    />
-                  </PopoverContent>
-                </Popover>
-              )}
+              <PeriodoFilter 
+                value={periodo} 
+                onChange={setPeriodo}
+                showAllOption
+              />
             </div>
 
             <Card className="p-0 overflow-hidden">

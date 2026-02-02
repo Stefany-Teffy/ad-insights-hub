@@ -1,8 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Trash2, RotateCcw, Search, CalendarIcon, RefreshCw, Loader2 } from 'lucide-react';
-import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
+import { ArrowLeft, Trash2, RotateCcw, Search, RefreshCw, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
@@ -29,14 +27,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
-import { Calendar } from '@/components/ui/calendar';
 import { StatusBadge } from '@/components/MetricBadge';
-import { formatCurrency, formatRoas } from '@/lib/metrics';
+import { PeriodoFilter, usePeriodo } from '@/components/PeriodoFilter';
 import { toast } from '@/hooks/use-toast';
 import {
   useOfertasArquivadas,
@@ -52,8 +44,7 @@ export default function ArchivedOffers() {
   const [searchQuery, setSearchQuery] = useState('');
   const [nicheFilter, setNicheFilter] = useState<string>('all');
   const [countryFilter, setCountryFilter] = useState<string>('all');
-  const [periodFilter, setPeriodFilter] = useState<string>('all');
-  const [customDateRange, setCustomDateRange] = useState<{ from: Date | undefined; to: Date | undefined }>({ from: undefined, to: undefined });
+  const { periodo, setPeriodo } = usePeriodo('all');
   
   // Delete dialog state
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -73,30 +64,16 @@ export default function ArchivedOffers() {
     const matchesNiche = nicheFilter === 'all' || offer.nicho === nicheFilter;
     const matchesCountry = countryFilter === 'all' || offer.pais === countryFilter;
     
-    // Period filter
-    if (periodFilter !== 'all' && periodFilter !== 'custom') {
+    // Period filter using periodo state
+    if (periodo.tipo !== 'all') {
       const createdAt = new Date(offer.created_at || '');
-      const now = new Date();
+      const startDate = new Date(periodo.dataInicio);
+      const endDate = new Date(periodo.dataFim);
+      endDate.setHours(23, 59, 59, 999);
       
-      if (periodFilter === 'today') {
-        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        if (createdAt < today) return false;
-      } else if (periodFilter === '7d') {
-        const sevenDaysAgo = new Date(now);
-        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-        if (createdAt < sevenDaysAgo) return false;
-      } else if (periodFilter === '30d') {
-        const thirtyDaysAgo = new Date(now);
-        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-        if (createdAt < thirtyDaysAgo) return false;
-      }
+      if (createdAt < startDate || createdAt > endDate) return false;
     }
     
-    if (periodFilter === 'custom' && customDateRange.from) {
-      const createdAt = new Date(offer.created_at || '');
-      if (createdAt < customDateRange.from) return false;
-      if (customDateRange.to && createdAt > customDateRange.to) return false;
-    }
     
     return matchesSearch && matchesNiche && matchesCountry;
   });
@@ -218,47 +195,11 @@ export default function ArchivedOffers() {
               ))}
             </SelectContent>
           </Select>
-          <Select value={periodFilter} onValueChange={setPeriodFilter}>
-            <SelectTrigger className="w-[150px]">
-              <SelectValue placeholder="Período" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos Períodos</SelectItem>
-              <SelectItem value="today">Hoje</SelectItem>
-              <SelectItem value="7d">Últimos 7d</SelectItem>
-              <SelectItem value="30d">Últimos 30d</SelectItem>
-              <SelectItem value="custom">Personalizado</SelectItem>
-            </SelectContent>
-          </Select>
-          {periodFilter === 'custom' && (
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button variant="outline" className="gap-2">
-                  <CalendarIcon className="h-4 w-4" />
-                  {customDateRange.from ? (
-                    customDateRange.to ? (
-                      <>
-                        {format(customDateRange.from, "dd/MM", { locale: ptBR })} - {format(customDateRange.to, "dd/MM", { locale: ptBR })}
-                      </>
-                    ) : (
-                      format(customDateRange.from, "dd/MM/yyyy", { locale: ptBR })
-                    )
-                  ) : (
-                    "Selecionar"
-                  )}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0" align="start">
-                <Calendar
-                  mode="range"
-                  selected={{ from: customDateRange.from, to: customDateRange.to }}
-                  onSelect={(range) => setCustomDateRange({ from: range?.from, to: range?.to })}
-                  numberOfMonths={2}
-                  className="pointer-events-auto"
-                />
-              </PopoverContent>
-            </Popover>
-          )}
+          <PeriodoFilter 
+            value={periodo} 
+            onChange={setPeriodo}
+            showAllOption
+          />
         </div>
       </Card>
 
