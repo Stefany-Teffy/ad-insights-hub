@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, Pencil, Search, ArrowUpDown, CalendarIcon, Eye } from 'lucide-react';
+import { Plus, Pencil, Search, ArrowUpDown, CalendarIcon, Eye, RefreshCw, Loader2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -48,20 +48,60 @@ import { Calendar } from '@/components/ui/calendar';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { StatusBadge, MetricBadge } from '@/components/MetricBadge';
-import { mockOffers, niches, countries } from '@/lib/mockData';
+import { CreatableCombobox } from '@/components/ui/creatable-combobox';
 import { formatCurrency, formatRoas, getMetricStatus, getMetricClass } from '@/lib/metrics';
 import { cn } from '@/lib/utils';
+import { useToast } from '@/hooks/use-toast';
+import {
+  useOfertas,
+  useCreateOferta,
+  useUpdateOferta,
+  useArchiveOferta,
+  useNichos,
+  usePaises,
+  useCreateNicho,
+  useCreatePais,
+  useMetricasOferta,
+} from '@/hooks/useSupabase';
+import { parseThresholds, type Oferta } from '@/services/api';
 
 type SortField = 'roas' | 'ic' | 'cpc' | 'profit' | 'mc' | 'revenue' | 'spend' | 'date' | null;
 type SortDirection = 'asc' | 'desc';
 
+// Tipo local para oferta com métricas calculadas
+interface OfertaComMetricas extends Oferta {
+  metricas?: {
+    roas: number;
+    ic: number;
+    cpc: number;
+    lucro: number;
+    mc: number;
+    faturado: number;
+    spend: number;
+  };
+}
+
 export default function OffersManagement() {
   const navigate = useNavigate();
+  const { toast } = useToast();
+  
+  // Supabase hooks
+  const { data: ofertas, isLoading: isLoadingOfertas, refetch } = useOfertas();
+  const { data: nichos, isLoading: isLoadingNichos } = useNichos();
+  const { data: paises, isLoading: isLoadingPaises } = usePaises();
+  
+  const createOfertaMutation = useCreateOferta();
+  const updateOfertaMutation = useUpdateOferta();
+  const archiveOfertaMutation = useArchiveOferta();
+  const createNichoMutation = useCreateNicho();
+  const createPaisMutation = useCreatePais();
+  
+  // UI State
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [isEditSheetOpen, setIsEditSheetOpen] = useState(false);
   const [isConfirmDialogOpen, setIsConfirmDialogOpen] = useState(false);
   const [isViewMetricsDialogOpen, setIsViewMetricsDialogOpen] = useState(false);
-  const [viewingOffer, setViewingOffer] = useState<typeof mockOffers[0] | null>(null);
+  const [viewingOffer, setViewingOffer] = useState<OfertaComMetricas | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [nicheFilter, setNicheFilter] = useState<string>('all');
   const [countryFilter, setCountryFilter] = useState<string>('all');
@@ -73,6 +113,10 @@ export default function OffersManagement() {
   const [customDateRange, setCustomDateRange] = useState<{ from: Date | undefined; to: Date | undefined }>({ from: undefined, to: undefined });
   
   // New offer form state
+  const [newOfferName, setNewOfferName] = useState('');
+  const [newOfferNiche, setNewOfferNiche] = useState('');
+  const [newOfferCountry, setNewOfferCountry] = useState('');
+  const [newOfferStatus, setNewOfferStatus] = useState('ativo');
   const [newOfferDate, setNewOfferDate] = useState<Date>(new Date());
   const [roasGreen, setRoasGreen] = useState('1.30');
   const [roasYellow, setRoasYellow] = useState('1.10');
@@ -82,7 +126,7 @@ export default function OffersManagement() {
   const [cpcYellow, setCpcYellow] = useState('2.00');
   
   // Edit form state
-  const [editingOffer, setEditingOffer] = useState<typeof mockOffers[0] | null>(null);
+  const [editingOffer, setEditingOffer] = useState<OfertaComMetricas | null>(null);
   const [editName, setEditName] = useState('');
   const [editNiche, setEditNiche] = useState('');
   const [editCountry, setEditCountry] = useState('');
@@ -96,6 +140,26 @@ export default function OffersManagement() {
     startDate: false,
   });
 
+  // Convert nichos/paises to combobox options
+  const nichosOptions = (nichos || []).map(n => ({ value: n.nome, label: n.nome }));
+  const paisesOptions = (paises || []).map(p => ({ value: p.nome, label: p.nome }));
+
+  // Filter and enrich ofertas - only show active/paused (not archived)
+  const activeOfertas: OfertaComMetricas[] = (ofertas || [])
+    .filter(o => o.status === 'ativo' || o.status === 'pausado')
+    .map(oferta => ({
+      ...oferta,
+      metricas: {
+        roas: 0,
+        ic: 0,
+        cpc: 0,
+        lucro: 0,
+        mc: 0,
+        faturado: 0,
+        spend: 0,
+      }
+    }));
+
   const handleSort = (field: SortField) => {
     if (sortField === field) {
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
@@ -105,12 +169,19 @@ export default function OffersManagement() {
     }
   };
 
-  const filteredOffers = mockOffers.filter((offer) => {
-    const matchesSearch = offer.name.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesNiche = nicheFilter === 'all' || offer.niche === nicheFilter;
-    const matchesCountry = countryFilter === 'all' || offer.country === countryFilter;
+  const filteredOffers = activeOfertas.filter((offer) => {
+    const matchesSearch = offer.nome.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesNiche = nicheFilter === 'all' || offer.nicho === nicheFilter;
+    const matchesCountry = countryFilter === 'all' || offer.pais === countryFilter;
     const matchesStatus = statusFilter === 'all' || offer.status === statusFilter;
-    const health = getMetricStatus(offer.metrics.roasTotal, 'roas', offer.thresholds);
+    
+    // For health filter, we need thresholds
+    const thresholds = parseThresholds(offer.thresholds);
+    const health = getMetricStatus(offer.metricas?.roas || 0, 'roas', {
+      roas: { green: thresholds.roas.verde, yellow: thresholds.roas.amarelo },
+      ic: { green: thresholds.ic.verde, yellow: thresholds.ic.amarelo },
+      cpc: { green: thresholds.cpc.verde, yellow: thresholds.cpc.amarelo },
+    });
     const matchesHealth = healthFilter === 'all' || health === healthFilter;
     
     return matchesSearch && matchesNiche && matchesCountry && matchesStatus && matchesHealth;
@@ -120,45 +191,39 @@ export default function OffersManagement() {
     if (!sortField) return 0;
     
     let aValue: number, bValue: number;
-    const aIc = a.dailyMetrics.reduce((sum, m) => sum + m.ic, 0) / a.dailyMetrics.length;
-    const bIc = b.dailyMetrics.reduce((sum, m) => sum + m.ic, 0) / b.dailyMetrics.length;
-    const aCpc = a.dailyMetrics.reduce((sum, m) => sum + m.cpc, 0) / a.dailyMetrics.length;
-    const bCpc = b.dailyMetrics.reduce((sum, m) => sum + m.cpc, 0) / b.dailyMetrics.length;
-    const aMc = a.dailyMetrics.reduce((sum, m) => sum + m.mc, 0) / a.dailyMetrics.length;
-    const bMc = b.dailyMetrics.reduce((sum, m) => sum + m.mc, 0) / b.dailyMetrics.length;
     
     switch (sortField) {
       case 'roas':
-        aValue = a.metrics.roasTotal;
-        bValue = b.metrics.roasTotal;
+        aValue = a.metricas?.roas || 0;
+        bValue = b.metricas?.roas || 0;
         break;
       case 'ic':
-        aValue = aIc;
-        bValue = bIc;
+        aValue = a.metricas?.ic || 0;
+        bValue = b.metricas?.ic || 0;
         break;
       case 'cpc':
-        aValue = aCpc;
-        bValue = bCpc;
+        aValue = a.metricas?.cpc || 0;
+        bValue = b.metricas?.cpc || 0;
         break;
       case 'profit':
-        aValue = a.metrics.profit;
-        bValue = b.metrics.profit;
+        aValue = a.metricas?.lucro || 0;
+        bValue = b.metricas?.lucro || 0;
         break;
       case 'mc':
-        aValue = aMc;
-        bValue = bMc;
+        aValue = a.metricas?.mc || 0;
+        bValue = b.metricas?.mc || 0;
         break;
       case 'revenue':
-        aValue = a.metrics.revenue;
-        bValue = b.metrics.revenue;
+        aValue = a.metricas?.faturado || 0;
+        bValue = b.metricas?.faturado || 0;
         break;
       case 'spend':
-        aValue = a.metrics.spendTotal;
-        bValue = b.metrics.spendTotal;
+        aValue = a.metricas?.spend || 0;
+        bValue = b.metricas?.spend || 0;
         break;
       case 'date':
-        aValue = new Date(a.createdAt).getTime();
-        bValue = new Date(b.createdAt).getTime();
+        aValue = new Date(a.data).getTime();
+        bValue = new Date(b.data).getTime();
         break;
       default:
         return 0;
@@ -167,13 +232,87 @@ export default function OffersManagement() {
     return sortDirection === 'asc' ? aValue - bValue : bValue - aValue;
   });
 
-  const openEditSheet = (offer: typeof mockOffers[0]) => {
+  const resetNewOfferForm = () => {
+    setNewOfferName('');
+    setNewOfferNiche('');
+    setNewOfferCountry('');
+    setNewOfferStatus('ativo');
+    setNewOfferDate(new Date());
+    setRoasGreen('1.30');
+    setRoasYellow('1.10');
+    setIcGreen('50.00');
+    setIcYellow('60.00');
+    setCpcGreen('1.50');
+    setCpcYellow('2.00');
+  };
+
+  const handleCreateOffer = async () => {
+    if (!newOfferName || !newOfferNiche || !newOfferCountry) {
+      toast({
+        title: 'Campos obrigatórios',
+        description: 'Preencha nome, nicho e país',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    try {
+      await createOfertaMutation.mutateAsync({
+        nome: newOfferName,
+        nicho: newOfferNiche,
+        pais: newOfferCountry,
+        status: newOfferStatus,
+        data: format(newOfferDate, 'yyyy-MM-dd'),
+        thresholds: {
+          roas: { verde: parseFloat(roasGreen), amarelo: parseFloat(roasYellow) },
+          ic: { verde: parseFloat(icGreen), amarelo: parseFloat(icYellow) },
+          cpc: { verde: parseFloat(cpcGreen), amarelo: parseFloat(cpcYellow) },
+        },
+      });
+
+      toast({
+        title: 'Oferta criada!',
+        description: `A oferta "${newOfferName}" foi criada com sucesso.`,
+      });
+
+      resetNewOfferForm();
+      setIsSheetOpen(false);
+    } catch (error) {
+      toast({
+        title: 'Erro ao criar oferta',
+        description: error instanceof Error ? error.message : 'Erro desconhecido',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleCreateNicho = async (nome: string) => {
+    await createNichoMutation.mutateAsync(nome);
+    setNewOfferNiche(nome);
+  };
+
+  const handleCreatePais = async (nome: string) => {
+    await createPaisMutation.mutateAsync({ nome });
+    setNewOfferCountry(nome);
+  };
+
+  const handleCreateNichoEdit = async (nome: string) => {
+    await createNichoMutation.mutateAsync(nome);
+    setEditNiche(nome);
+  };
+
+  const handleCreatePaisEdit = async (nome: string) => {
+    await createPaisMutation.mutateAsync({ nome });
+    setEditCountry(nome);
+  };
+
+  const openEditSheet = (offer: OfertaComMetricas) => {
     setEditingOffer(offer);
-    setEditName(offer.name);
-    setEditNiche(offer.niche);
-    setEditCountry(offer.country);
-    setEditStatus(offer.status);
-    setEditStartDate(new Date(offer.createdAt));
+    setEditName(offer.nome);
+    setEditNiche(offer.nicho);
+    setEditCountry(offer.pais);
+    setEditStatus(offer.status || 'ativo');
+    setEditStartDate(new Date(offer.data));
     setEditFieldsEnabled({
       name: false,
       niche: false,
@@ -184,7 +323,7 @@ export default function OffersManagement() {
     setIsEditSheetOpen(true);
   };
 
-  const openViewMetrics = (offer: typeof mockOffers[0]) => {
+  const openViewMetrics = (offer: OfertaComMetricas) => {
     setViewingOffer(offer);
     setIsViewMetricsDialogOpen(true);
   };
@@ -193,10 +332,40 @@ export default function OffersManagement() {
     setIsConfirmDialogOpen(true);
   };
 
-  const handleConfirmEdit = () => {
-    setIsConfirmDialogOpen(false);
-    setIsEditSheetOpen(false);
-    setEditingOffer(null);
+  const handleConfirmEdit = async () => {
+    if (!editingOffer) return;
+
+    try {
+      const updates: Record<string, any> = {};
+      
+      if (editFieldsEnabled.name) updates.nome = editName;
+      if (editFieldsEnabled.niche) updates.nicho = editNiche;
+      if (editFieldsEnabled.country) updates.pais = editCountry;
+      if (editFieldsEnabled.status) updates.status = editStatus;
+      if (editFieldsEnabled.startDate && editStartDate) {
+        updates.data = format(editStartDate, 'yyyy-MM-dd');
+      }
+
+      await updateOfertaMutation.mutateAsync({
+        id: editingOffer.id,
+        updates,
+      });
+
+      toast({
+        title: 'Oferta atualizada!',
+        description: 'As alterações foram salvas com sucesso.',
+      });
+
+      setIsConfirmDialogOpen(false);
+      setIsEditSheetOpen(false);
+      setEditingOffer(null);
+    } catch (error) {
+      toast({
+        title: 'Erro ao atualizar oferta',
+        description: error instanceof Error ? error.message : 'Erro desconhecido',
+        variant: 'destructive',
+      });
+    }
   };
 
   const SortableHeader = ({ field, children, className }: { field: SortField; children: React.ReactNode; className?: string }) => (
@@ -214,6 +383,24 @@ export default function OffersManagement() {
     </TableHead>
   );
 
+  const getOfferThresholds = (offer: OfertaComMetricas) => {
+    const t = parseThresholds(offer.thresholds);
+    return {
+      roas: { green: t.roas.verde, yellow: t.roas.amarelo },
+      ic: { green: t.ic.verde, yellow: t.ic.amarelo },
+      cpc: { green: t.cpc.verde, yellow: t.cpc.amarelo },
+    };
+  };
+
+  const mapStatusToDisplay = (status: string): 'active' | 'paused' | 'archived' => {
+    switch (status) {
+      case 'ativo': return 'active';
+      case 'pausado': return 'paused';
+      case 'arquivado': return 'archived';
+      default: return 'active';
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -222,228 +409,259 @@ export default function OffersManagement() {
           <h1 className="text-2xl font-bold text-foreground">Gestão de Ofertas</h1>
           <p className="text-sm text-muted-foreground mt-1">Cadastre e gerencie suas ofertas</p>
         </div>
-        <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
-          <SheetTrigger asChild>
-            <Button className="gap-2">
-              <Plus className="h-4 w-4" />
-              Nova Oferta
-            </Button>
-          </SheetTrigger>
-          <SheetContent className="w-[500px] sm:max-w-lg">
-            <SheetHeader>
-              <SheetTitle>Nova Oferta</SheetTitle>
-              <SheetDescription>
-                Cadastre uma nova oferta no sistema
-              </SheetDescription>
-            </SheetHeader>
-            <ScrollArea className="h-[calc(100vh-180px)] pr-4">
-              <div className="grid gap-4 py-6">
-                <div className="grid gap-2">
-                  <Label htmlFor="name">Nome da Oferta</Label>
-                  <Input id="name" placeholder="Ex: Nutra Max Pro" />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="grid gap-2">
-                    <Label htmlFor="niche">Nicho</Label>
-                    <Select>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecione" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {niches.map((niche) => (
-                          <SelectItem key={niche} value={niche}>{niche}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="country">País</Label>
-                    <Select>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecione" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {countries.map((country) => (
-                          <SelectItem key={country} value={country}>{country}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="grid gap-2">
-                    <Label htmlFor="status">Status</Label>
-                    <Select defaultValue="active">
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="active">Ativo</SelectItem>
-                        <SelectItem value="paused">Pausado</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="date">Data de Início</Label>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <Button
-                          variant="outline"
-                          className="w-full justify-start text-left font-normal"
-                        >
-                          <CalendarIcon className="mr-2 h-4 w-4" />
-                          {format(newOfferDate, "dd/MM/yyyy", { locale: ptBR })}
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0" align="start">
-                        <Calendar
-                          mode="single"
-                          selected={newOfferDate}
-                          onSelect={(date) => date && setNewOfferDate(date)}
-                          initialFocus
-                          className="pointer-events-auto"
-                        />
-                      </PopoverContent>
-                    </Popover>
-                  </div>
-                </div>
-
-                {/* ROAS Threshold Section */}
-                <div className="pt-4 border-t border-border">
-                  <div className="flex items-center gap-2 mb-2">
-                    <h4 className="text-sm font-medium">Thresholds – ROAS</h4>
-                  </div>
-                  <p className="text-xs text-muted-foreground mb-3">
-                    Defina quando o ROAS é considerado excelente, atenção ou crítico
-                  </p>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="grid gap-2">
-                      <Label className="flex items-center gap-2">
-                        <span className="h-2 w-2 rounded-full bg-success" />
-                        Verde (ROAS &gt;)
-                      </Label>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        value={roasGreen}
-                        onChange={(e) => setRoasGreen(e.target.value)}
-                        placeholder="1.30"
-                        className="placeholder:text-muted-foreground/40"
-                      />
-                    </div>
-                    <div className="grid gap-2">
-                      <Label className="flex items-center gap-2">
-                        <span className="h-2 w-2 rounded-full bg-warning" />
-                        Amarelo (ROAS &gt;)
-                      </Label>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        value={roasYellow}
-                        onChange={(e) => setRoasYellow(e.target.value)}
-                        placeholder="1.10"
-                        className="placeholder:text-muted-foreground/40"
-                      />
-                    </div>
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-2">
-                    ✓ Verde: ROAS &gt; {roasGreen} (ótimo) | ⚠ Amarelo: {roasYellow}–{roasGreen} (atenção) | ✗ Vermelho: &lt; {roasYellow} (crítico)
-                  </p>
-                </div>
-
-                {/* IC Threshold Section */}
-                <div className="pt-4 border-t border-border">
-                  <div className="flex items-center gap-2 mb-2">
-                    <h4 className="text-sm font-medium">Thresholds – IC (Custo por Inicialização)</h4>
-                  </div>
-                  <p className="text-xs text-muted-foreground mb-3">
-                    Defina quando o IC é considerado excelente, atenção ou crítico
-                  </p>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="grid gap-2">
-                      <Label className="flex items-center gap-2">
-                        <span className="h-2 w-2 rounded-full bg-success" />
-                        Verde (IC &lt;)
-                      </Label>
-                      <Input
-                        type="number"
-                        value={icGreen}
-                        onChange={(e) => setIcGreen(e.target.value)}
-                        placeholder="50.00"
-                        className="placeholder:text-muted-foreground/40"
-                      />
-                    </div>
-                    <div className="grid gap-2">
-                      <Label className="flex items-center gap-2">
-                        <span className="h-2 w-2 rounded-full bg-warning" />
-                        Amarelo (IC &lt;)
-                      </Label>
-                      <Input
-                        type="number"
-                        value={icYellow}
-                        onChange={(e) => setIcYellow(e.target.value)}
-                        placeholder="60.00"
-                        className="placeholder:text-muted-foreground/40"
-                      />
-                    </div>
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-2">
-                    ✓ Verde: IC &lt; R${icGreen} (ótimo) | ⚠ Amarelo: R${icGreen}–R${icYellow} (atenção) | ✗ Vermelho: &gt; R${icYellow} (crítico)
-                  </p>
-                </div>
-
-                {/* CPC Threshold Section */}
-                <div className="pt-4 border-t border-border">
-                  <div className="flex items-center gap-2 mb-2">
-                    <h4 className="text-sm font-medium">Thresholds – CPC (Custo por Clique)</h4>
-                  </div>
-                  <p className="text-xs text-muted-foreground mb-3">
-                    Defina quando o CPC é considerado excelente, atenção ou crítico
-                  </p>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="grid gap-2">
-                      <Label className="flex items-center gap-2">
-                        <span className="h-2 w-2 rounded-full bg-success" />
-                        Verde (CPC &lt;)
-                      </Label>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        value={cpcGreen}
-                        onChange={(e) => setCpcGreen(e.target.value)}
-                        placeholder="1.50"
-                        className="placeholder:text-muted-foreground/40"
-                      />
-                    </div>
-                    <div className="grid gap-2">
-                      <Label className="flex items-center gap-2">
-                        <span className="h-2 w-2 rounded-full bg-warning" />
-                        Amarelo (CPC &lt;)
-                      </Label>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        value={cpcYellow}
-                        onChange={(e) => setCpcYellow(e.target.value)}
-                        placeholder="2.00"
-                        className="placeholder:text-muted-foreground/40"
-                      />
-                    </div>
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-2">
-                    ✓ Verde: CPC &lt; R${cpcGreen} (ótimo) | ⚠ Amarelo: R${cpcGreen}–R${cpcYellow} (atenção) | ✗ Vermelho: &gt; R${cpcYellow} (crítico)
-                  </p>
-                </div>
-              </div>
-            </ScrollArea>
-            <SheetFooter className="mt-4">
-              <Button variant="outline" onClick={() => setIsSheetOpen(false)}>
-                Cancelar
+        <div className="flex items-center gap-2">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            className="gap-2"
+            onClick={() => refetch()}
+            disabled={isLoadingOfertas}
+          >
+            {isLoadingOfertas ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <RefreshCw className="h-4 w-4" />
+            )}
+            Atualizar
+          </Button>
+          <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
+            <SheetTrigger asChild>
+              <Button className="gap-2">
+                <Plus className="h-4 w-4" />
+                Nova Oferta
               </Button>
-              <Button onClick={() => setIsSheetOpen(false)}>Criar Oferta</Button>
-            </SheetFooter>
-          </SheetContent>
-        </Sheet>
+            </SheetTrigger>
+            <SheetContent className="w-[500px] sm:max-w-lg">
+              <SheetHeader>
+                <SheetTitle>Nova Oferta</SheetTitle>
+                <SheetDescription>
+                  Cadastre uma nova oferta no sistema
+                </SheetDescription>
+              </SheetHeader>
+              <ScrollArea className="h-[calc(100vh-180px)] pr-4">
+                <div className="grid gap-4 py-6">
+                  <div className="grid gap-2">
+                    <Label htmlFor="name">Nome da Oferta</Label>
+                    <Input 
+                      id="name" 
+                      placeholder="Ex: Nutra Max Pro"
+                      value={newOfferName}
+                      onChange={(e) => setNewOfferName(e.target.value)}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="grid gap-2">
+                      <Label htmlFor="niche">Nicho</Label>
+                      <CreatableCombobox
+                        options={nichosOptions}
+                        value={newOfferNiche}
+                        onChange={setNewOfferNiche}
+                        onCreateNew={handleCreateNicho}
+                        placeholder="Selecione"
+                        searchPlaceholder="Buscar nicho..."
+                        emptyText="Nenhum nicho encontrado"
+                        createText="Criar"
+                        isLoading={isLoadingNichos}
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="country">País</Label>
+                      <CreatableCombobox
+                        options={paisesOptions}
+                        value={newOfferCountry}
+                        onChange={setNewOfferCountry}
+                        onCreateNew={handleCreatePais}
+                        placeholder="Selecione"
+                        searchPlaceholder="Buscar país..."
+                        emptyText="Nenhum país encontrado"
+                        createText="Criar"
+                        isLoading={isLoadingPaises}
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="grid gap-2">
+                      <Label htmlFor="status">Status</Label>
+                      <Select value={newOfferStatus} onValueChange={setNewOfferStatus}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="ativo">Ativo</SelectItem>
+                          <SelectItem value="pausado">Pausado</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="date">Data de Início</Label>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant="outline"
+                            className="w-full justify-start text-left font-normal"
+                          >
+                            <CalendarIcon className="mr-2 h-4 w-4" />
+                            {format(newOfferDate, "dd/MM/yyyy", { locale: ptBR })}
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                          <Calendar
+                            mode="single"
+                            selected={newOfferDate}
+                            onSelect={(date) => date && setNewOfferDate(date)}
+                            initialFocus
+                            className="pointer-events-auto"
+                          />
+                        </PopoverContent>
+                      </Popover>
+                    </div>
+                  </div>
+
+                  {/* ROAS Threshold Section */}
+                  <div className="pt-4 border-t border-border">
+                    <div className="flex items-center gap-2 mb-2">
+                      <h4 className="text-sm font-medium">Thresholds – ROAS</h4>
+                    </div>
+                    <p className="text-xs text-muted-foreground mb-3">
+                      Defina quando o ROAS é considerado excelente, atenção ou crítico
+                    </p>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="grid gap-2">
+                        <Label className="flex items-center gap-2">
+                          <span className="h-2 w-2 rounded-full bg-success" />
+                          Verde (ROAS &gt;)
+                        </Label>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          value={roasGreen}
+                          onChange={(e) => setRoasGreen(e.target.value)}
+                          placeholder="1.30"
+                          className="placeholder:text-muted-foreground/40"
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label className="flex items-center gap-2">
+                          <span className="h-2 w-2 rounded-full bg-warning" />
+                          Amarelo (ROAS &gt;)
+                        </Label>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          value={roasYellow}
+                          onChange={(e) => setRoasYellow(e.target.value)}
+                          placeholder="1.10"
+                          className="placeholder:text-muted-foreground/40"
+                        />
+                      </div>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-2">
+                      ✓ Verde: ROAS &gt; {roasGreen} (ótimo) | ⚠ Amarelo: {roasYellow}–{roasGreen} (atenção) | ✗ Vermelho: &lt; {roasYellow} (crítico)
+                    </p>
+                  </div>
+
+                  {/* IC Threshold Section */}
+                  <div className="pt-4 border-t border-border">
+                    <div className="flex items-center gap-2 mb-2">
+                      <h4 className="text-sm font-medium">Thresholds – IC (Custo por Inicialização)</h4>
+                    </div>
+                    <p className="text-xs text-muted-foreground mb-3">
+                      Defina quando o IC é considerado excelente, atenção ou crítico
+                    </p>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="grid gap-2">
+                        <Label className="flex items-center gap-2">
+                          <span className="h-2 w-2 rounded-full bg-success" />
+                          Verde (IC &lt;)
+                        </Label>
+                        <Input
+                          type="number"
+                          value={icGreen}
+                          onChange={(e) => setIcGreen(e.target.value)}
+                          placeholder="50.00"
+                          className="placeholder:text-muted-foreground/40"
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label className="flex items-center gap-2">
+                          <span className="h-2 w-2 rounded-full bg-warning" />
+                          Amarelo (IC &lt;)
+                        </Label>
+                        <Input
+                          type="number"
+                          value={icYellow}
+                          onChange={(e) => setIcYellow(e.target.value)}
+                          placeholder="60.00"
+                          className="placeholder:text-muted-foreground/40"
+                        />
+                      </div>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-2">
+                      ✓ Verde: IC &lt; R${icGreen} (ótimo) | ⚠ Amarelo: R${icGreen}–R${icYellow} (atenção) | ✗ Vermelho: &gt; R${icYellow} (crítico)
+                    </p>
+                  </div>
+
+                  {/* CPC Threshold Section */}
+                  <div className="pt-4 border-t border-border">
+                    <div className="flex items-center gap-2 mb-2">
+                      <h4 className="text-sm font-medium">Thresholds – CPC (Custo por Clique)</h4>
+                    </div>
+                    <p className="text-xs text-muted-foreground mb-3">
+                      Defina quando o CPC é considerado excelente, atenção ou crítico
+                    </p>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="grid gap-2">
+                        <Label className="flex items-center gap-2">
+                          <span className="h-2 w-2 rounded-full bg-success" />
+                          Verde (CPC &lt;)
+                        </Label>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          value={cpcGreen}
+                          onChange={(e) => setCpcGreen(e.target.value)}
+                          placeholder="1.50"
+                          className="placeholder:text-muted-foreground/40"
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label className="flex items-center gap-2">
+                          <span className="h-2 w-2 rounded-full bg-warning" />
+                          Amarelo (CPC &lt;)
+                        </Label>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          value={cpcYellow}
+                          onChange={(e) => setCpcYellow(e.target.value)}
+                          placeholder="2.00"
+                          className="placeholder:text-muted-foreground/40"
+                        />
+                      </div>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-2">
+                      ✓ Verde: CPC &lt; R${cpcGreen} (ótimo) | ⚠ Amarelo: R${cpcGreen}–R${cpcYellow} (atenção) | ✗ Vermelho: &gt; R${cpcYellow} (crítico)
+                    </p>
+                  </div>
+                </div>
+              </ScrollArea>
+              <SheetFooter className="mt-4">
+                <Button variant="outline" onClick={() => setIsSheetOpen(false)}>
+                  Cancelar
+                </Button>
+                <Button 
+                  onClick={handleCreateOffer}
+                  disabled={createOfertaMutation.isPending}
+                >
+                  {createOfertaMutation.isPending && (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  )}
+                  Criar Oferta
+                </Button>
+              </SheetFooter>
+            </SheetContent>
+          </Sheet>
+        </div>
       </div>
 
       {/* Filters */}
@@ -464,8 +682,8 @@ export default function OffersManagement() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todos Nichos</SelectItem>
-              {niches.map((niche) => (
-                <SelectItem key={niche} value={niche}>{niche}</SelectItem>
+              {(nichos || []).map((niche) => (
+                <SelectItem key={niche.id} value={niche.nome}>{niche.nome}</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -475,8 +693,8 @@ export default function OffersManagement() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todos Países</SelectItem>
-              {countries.map((country) => (
-                <SelectItem key={country} value={country}>{country}</SelectItem>
+              {(paises || []).map((pais) => (
+                <SelectItem key={pais.id} value={pais.nome}>{pais.nome}</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -486,8 +704,8 @@ export default function OffersManagement() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todos Status</SelectItem>
-              <SelectItem value="active">Ativo</SelectItem>
-              <SelectItem value="paused">Pausado</SelectItem>
+              <SelectItem value="ativo">Ativo</SelectItem>
+              <SelectItem value="pausado">Pausado</SelectItem>
             </SelectContent>
           </Select>
           <Select value={healthFilter} onValueChange={setHealthFilter}>
@@ -560,226 +778,236 @@ export default function OffersManagement() {
         </div>
       </Card>
 
-      {/* Table */}
-      <Card className="p-0 overflow-hidden">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <SortableHeader field="date">Data</SortableHeader>
-              <TableHead>Nome</TableHead>
-              <TableHead>Nicho</TableHead>
-              <TableHead>País</TableHead>
-              <TableHead>Status</TableHead>
-              <SortableHeader field="roas" className="text-right">ROAS</SortableHeader>
-              <SortableHeader field="ic" className="text-right">IC</SortableHeader>
-              <SortableHeader field="cpc" className="text-right">CPC</SortableHeader>
-              <SortableHeader field="profit" className="text-right">Lucro</SortableHeader>
-              <SortableHeader field="mc" className="text-right">MC</SortableHeader>
-              <SortableHeader field="revenue" className="text-right">Faturamento</SortableHeader>
-              <SortableHeader field="spend" className="text-right">Spend</SortableHeader>
-              <TableHead className="text-right">Ações</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {sortedOffers.map((offer) => {
-              const avgIc = offer.dailyMetrics.reduce((sum, m) => sum + m.ic, 0) / offer.dailyMetrics.length;
-              const avgCpc = offer.dailyMetrics.reduce((sum, m) => sum + m.cpc, 0) / offer.dailyMetrics.length;
-              const avgMc = offer.dailyMetrics.reduce((sum, m) => sum + m.mc, 0) / offer.dailyMetrics.length;
-
-              return (
-                <TableRow key={offer.id}>
-                  <TableCell>{new Date(offer.createdAt).toLocaleDateString('pt-BR')}</TableCell>
-                  <TableCell className="font-medium">{offer.name}</TableCell>
-                  <TableCell>{offer.niche}</TableCell>
-                  <TableCell>{offer.country}</TableCell>
-                  <TableCell><StatusBadge status={offer.status} /></TableCell>
-                  <TableCell className="text-right">
-                    <MetricBadge
-                      value={offer.metrics.roasTotal}
-                      metricType="roas"
-                      thresholds={offer.thresholds}
-                      format={formatRoas}
-                    />
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <MetricBadge
-                      value={avgIc}
-                      metricType="ic"
-                      thresholds={offer.thresholds}
-                      format={(v) => formatCurrency(v)}
-                    />
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <MetricBadge
-                      value={avgCpc}
-                      metricType="cpc"
-                      thresholds={offer.thresholds}
-                      format={(v) => formatCurrency(v)}
-                    />
-                  </TableCell>
-                  <TableCell className={`text-right font-medium ${offer.metrics.profit >= 0 ? 'text-success' : 'text-danger'}`}>
-                    {formatCurrency(offer.metrics.profit)}
-                  </TableCell>
-                  <TableCell className="text-right">{avgMc.toFixed(1)}%</TableCell>
-                  <TableCell className="text-right">{formatCurrency(offer.metrics.revenue)}</TableCell>
-                  <TableCell className="text-right">{formatCurrency(offer.metrics.spendTotal)}</TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        className="h-8 w-8"
-                        onClick={() => openViewMetrics(offer)}
-                        title="Ver métricas"
-                      >
-                        <Eye className="h-4 w-4" />
-                      </Button>
-                      <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        className="h-8 w-8"
-                        onClick={() => openEditSheet(offer)}
-                        title="Editar oferta"
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                    </div>
+      {/* Loading State */}
+      {isLoadingOfertas ? (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      ) : (
+        /* Table */
+        <Card className="p-0 overflow-hidden">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <SortableHeader field="date">Data</SortableHeader>
+                <TableHead>Nome</TableHead>
+                <TableHead>Nicho</TableHead>
+                <TableHead>País</TableHead>
+                <TableHead>Status</TableHead>
+                <SortableHeader field="roas" className="text-right">ROAS</SortableHeader>
+                <SortableHeader field="ic" className="text-right">IC</SortableHeader>
+                <SortableHeader field="cpc" className="text-right">CPC</SortableHeader>
+                <SortableHeader field="profit" className="text-right">Lucro</SortableHeader>
+                <SortableHeader field="mc" className="text-right">MC</SortableHeader>
+                <SortableHeader field="revenue" className="text-right">Faturamento</SortableHeader>
+                <SortableHeader field="spend" className="text-right">Spend</SortableHeader>
+                <TableHead className="text-right">Ações</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {sortedOffers.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={13} className="text-center py-8 text-muted-foreground">
+                    Nenhuma oferta encontrada
                   </TableCell>
                 </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
-      </Card>
+              ) : (
+                sortedOffers.map((offer) => {
+                  const thresholds = getOfferThresholds(offer);
+                  const metricas = offer.metricas || { roas: 0, ic: 0, cpc: 0, lucro: 0, mc: 0, faturado: 0, spend: 0 };
+
+                  return (
+                    <TableRow key={offer.id}>
+                      <TableCell>{new Date(offer.data).toLocaleDateString('pt-BR')}</TableCell>
+                      <TableCell className="font-medium">{offer.nome}</TableCell>
+                      <TableCell>{offer.nicho}</TableCell>
+                      <TableCell>{offer.pais}</TableCell>
+                      <TableCell><StatusBadge status={mapStatusToDisplay(offer.status || 'ativo')} /></TableCell>
+                      <TableCell className="text-right">
+                        <MetricBadge
+                          value={metricas.roas}
+                          metricType="roas"
+                          thresholds={thresholds}
+                          format={formatRoas}
+                        />
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <MetricBadge
+                          value={metricas.ic}
+                          metricType="ic"
+                          thresholds={thresholds}
+                          format={(v) => formatCurrency(v)}
+                        />
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <MetricBadge
+                          value={metricas.cpc}
+                          metricType="cpc"
+                          thresholds={thresholds}
+                          format={(v) => formatCurrency(v)}
+                        />
+                      </TableCell>
+                      <TableCell className={`text-right font-medium ${metricas.lucro >= 0 ? 'text-success' : 'text-danger'}`}>
+                        {formatCurrency(metricas.lucro)}
+                      </TableCell>
+                      <TableCell className="text-right">{metricas.mc.toFixed(1)}%</TableCell>
+                      <TableCell className="text-right">{formatCurrency(metricas.faturado)}</TableCell>
+                      <TableCell className="text-right">{formatCurrency(metricas.spend)}</TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="h-8 w-8"
+                            onClick={() => openViewMetrics(offer)}
+                            title="Ver métricas"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="h-8 w-8"
+                            onClick={() => openEditSheet(offer)}
+                            title="Editar oferta"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              )}
+            </TableBody>
+          </Table>
+        </Card>
+      )}
 
       {/* View Metrics Dialog */}
       <Dialog open={isViewMetricsDialogOpen} onOpenChange={setIsViewMetricsDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Métricas Atuais - {viewingOffer?.name}</DialogTitle>
+            <DialogTitle>Métricas Atuais - {viewingOffer?.nome}</DialogTitle>
             <DialogDescription>
               Valores atuais e thresholds definidos para ROAS, IC e CPC
             </DialogDescription>
           </DialogHeader>
-          {viewingOffer && (
-            <div className="grid gap-4 py-4">
-              {/* ROAS */}
-              <div className="p-4 rounded-lg border">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-sm font-medium">ROAS</p>
-                  <div className="flex items-center gap-2">
-                    <span className={cn(
-                      "text-xl font-bold",
-                      getMetricClass(getMetricStatus(viewingOffer.metrics.roasTotal, 'roas', viewingOffer.thresholds))
-                    )}>
-                      {formatRoas(viewingOffer.metrics.roasTotal)}
+          {viewingOffer && (() => {
+            const thresholds = parseThresholds(viewingOffer.thresholds);
+            const metricas = viewingOffer.metricas || { roas: 0, ic: 0, cpc: 0 };
+            const displayThresholds = {
+              roas: { green: thresholds.roas.verde, yellow: thresholds.roas.amarelo },
+              ic: { green: thresholds.ic.verde, yellow: thresholds.ic.amarelo },
+              cpc: { green: thresholds.cpc.verde, yellow: thresholds.cpc.amarelo },
+            };
+            
+            return (
+              <div className="grid gap-4 py-4">
+                {/* ROAS */}
+                <div className="p-4 rounded-lg border">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm font-medium">ROAS</p>
+                    <div className="flex items-center gap-2">
+                      <span className={cn(
+                        "text-xl font-bold",
+                        getMetricClass(getMetricStatus(metricas.roas, 'roas', displayThresholds))
+                      )}>
+                        {formatRoas(metricas.roas)}
+                      </span>
+                      <span className={cn(
+                        "h-3 w-3 rounded-full",
+                        getMetricStatus(metricas.roas, 'roas', displayThresholds) === 'success' ? 'bg-success' :
+                        getMetricStatus(metricas.roas, 'roas', displayThresholds) === 'warning' ? 'bg-warning' : 'bg-danger'
+                      )} />
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                    <span className="flex items-center gap-1">
+                      <span className="h-2 w-2 rounded-full bg-success" />
+                      Verde: &gt; {thresholds.roas.verde}
                     </span>
-                    <span className={cn(
-                      "h-3 w-3 rounded-full",
-                      getMetricStatus(viewingOffer.metrics.roasTotal, 'roas', viewingOffer.thresholds) === 'success' ? 'bg-success' :
-                      getMetricStatus(viewingOffer.metrics.roasTotal, 'roas', viewingOffer.thresholds) === 'warning' ? 'bg-warning' : 'bg-danger'
-                    )} />
+                    <span className="flex items-center gap-1">
+                      <span className="h-2 w-2 rounded-full bg-warning" />
+                      Amarelo: {thresholds.roas.amarelo}–{thresholds.roas.verde}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className="h-2 w-2 rounded-full bg-danger" />
+                      Vermelho: &lt; {thresholds.roas.amarelo}
+                    </span>
                   </div>
                 </div>
-                <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                  <span className="flex items-center gap-1">
-                    <span className="h-2 w-2 rounded-full bg-success" />
-                    Verde: &gt; {viewingOffer.thresholds.roas.green}
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <span className="h-2 w-2 rounded-full bg-warning" />
-                    Amarelo: {viewingOffer.thresholds.roas.yellow}–{viewingOffer.thresholds.roas.green}
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <span className="h-2 w-2 rounded-full bg-danger" />
-                    Vermelho: &lt; {viewingOffer.thresholds.roas.yellow}
-                  </span>
-                </div>
-              </div>
 
-              {/* IC */}
-              <div className="p-4 rounded-lg border">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-sm font-medium">IC</p>
-                  <div className="flex items-center gap-2">
-                    {(() => {
-                      const avgIc = viewingOffer.dailyMetrics.reduce((sum, m) => sum + m.ic, 0) / viewingOffer.dailyMetrics.length;
-                      return (
-                        <>
-                          <span className={cn(
-                            "text-xl font-bold",
-                            getMetricClass(getMetricStatus(avgIc, 'ic', viewingOffer.thresholds))
-                          )}>
-                            {formatCurrency(avgIc)}
-                          </span>
-                          <span className={cn(
-                            "h-3 w-3 rounded-full",
-                            getMetricStatus(avgIc, 'ic', viewingOffer.thresholds) === 'success' ? 'bg-success' :
-                            getMetricStatus(avgIc, 'ic', viewingOffer.thresholds) === 'warning' ? 'bg-warning' : 'bg-danger'
-                          )} />
-                        </>
-                      );
-                    })()}
+                {/* IC */}
+                <div className="p-4 rounded-lg border">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm font-medium">IC</p>
+                    <div className="flex items-center gap-2">
+                      <span className={cn(
+                        "text-xl font-bold",
+                        getMetricClass(getMetricStatus(metricas.ic, 'ic', displayThresholds))
+                      )}>
+                        {formatCurrency(metricas.ic)}
+                      </span>
+                      <span className={cn(
+                        "h-3 w-3 rounded-full",
+                        getMetricStatus(metricas.ic, 'ic', displayThresholds) === 'success' ? 'bg-success' :
+                        getMetricStatus(metricas.ic, 'ic', displayThresholds) === 'warning' ? 'bg-warning' : 'bg-danger'
+                      )} />
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                    <span className="flex items-center gap-1">
+                      <span className="h-2 w-2 rounded-full bg-success" />
+                      Verde: &lt; R${thresholds.ic.verde}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className="h-2 w-2 rounded-full bg-warning" />
+                      Amarelo: R${thresholds.ic.verde}–R${thresholds.ic.amarelo}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className="h-2 w-2 rounded-full bg-danger" />
+                      Vermelho: &gt; R${thresholds.ic.amarelo}
+                    </span>
                   </div>
                 </div>
-                <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                  <span className="flex items-center gap-1">
-                    <span className="h-2 w-2 rounded-full bg-success" />
-                    Verde: &lt; R${viewingOffer.thresholds.ic.green}
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <span className="h-2 w-2 rounded-full bg-warning" />
-                    Amarelo: R${viewingOffer.thresholds.ic.green}–R${viewingOffer.thresholds.ic.yellow}
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <span className="h-2 w-2 rounded-full bg-danger" />
-                    Vermelho: &gt; R${viewingOffer.thresholds.ic.yellow}
-                  </span>
-                </div>
-              </div>
 
-              {/* CPC */}
-              <div className="p-4 rounded-lg border">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-sm font-medium">CPC</p>
-                  <div className="flex items-center gap-2">
-                    {(() => {
-                      const avgCpc = viewingOffer.dailyMetrics.reduce((sum, m) => sum + m.cpc, 0) / viewingOffer.dailyMetrics.length;
-                      return (
-                        <>
-                          <span className={cn(
-                            "text-xl font-bold",
-                            getMetricClass(getMetricStatus(avgCpc, 'cpc', viewingOffer.thresholds))
-                          )}>
-                            {formatCurrency(avgCpc)}
-                          </span>
-                          <span className={cn(
-                            "h-3 w-3 rounded-full",
-                            getMetricStatus(avgCpc, 'cpc', viewingOffer.thresholds) === 'success' ? 'bg-success' :
-                            getMetricStatus(avgCpc, 'cpc', viewingOffer.thresholds) === 'warning' ? 'bg-warning' : 'bg-danger'
-                          )} />
-                        </>
-                      );
-                    })()}
+                {/* CPC */}
+                <div className="p-4 rounded-lg border">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm font-medium">CPC</p>
+                    <div className="flex items-center gap-2">
+                      <span className={cn(
+                        "text-xl font-bold",
+                        getMetricClass(getMetricStatus(metricas.cpc, 'cpc', displayThresholds))
+                      )}>
+                        {formatCurrency(metricas.cpc)}
+                      </span>
+                      <span className={cn(
+                        "h-3 w-3 rounded-full",
+                        getMetricStatus(metricas.cpc, 'cpc', displayThresholds) === 'success' ? 'bg-success' :
+                        getMetricStatus(metricas.cpc, 'cpc', displayThresholds) === 'warning' ? 'bg-warning' : 'bg-danger'
+                      )} />
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                    <span className="flex items-center gap-1">
+                      <span className="h-2 w-2 rounded-full bg-success" />
+                      Verde: &lt; R${thresholds.cpc.verde}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className="h-2 w-2 rounded-full bg-warning" />
+                      Amarelo: R${thresholds.cpc.verde}–R${thresholds.cpc.amarelo}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className="h-2 w-2 rounded-full bg-danger" />
+                      Vermelho: &gt; R${thresholds.cpc.amarelo}
+                    </span>
                   </div>
                 </div>
-                <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                  <span className="flex items-center gap-1">
-                    <span className="h-2 w-2 rounded-full bg-success" />
-                    Verde: &lt; R${viewingOffer.thresholds.cpc.green}
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <span className="h-2 w-2 rounded-full bg-warning" />
-                    Amarelo: R${viewingOffer.thresholds.cpc.green}–R${viewingOffer.thresholds.cpc.yellow}
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <span className="h-2 w-2 rounded-full bg-danger" />
-                    Vermelho: &gt; R${viewingOffer.thresholds.cpc.yellow}
-                  </span>
-                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
           <DialogFooter>
             <Button onClick={() => setIsViewMetricsDialogOpen(false)}>Fechar</Button>
           </DialogFooter>
@@ -827,20 +1055,19 @@ export default function OffersManagement() {
                     />
                     <Label htmlFor="edit-niche-check">Nicho</Label>
                   </div>
-                  <Select 
-                    value={editNiche} 
-                    onValueChange={setEditNiche}
+                  <CreatableCombobox
+                    options={nichosOptions}
+                    value={editNiche}
+                    onChange={setEditNiche}
+                    onCreateNew={handleCreateNichoEdit}
+                    placeholder="Selecione"
+                    searchPlaceholder="Buscar nicho..."
+                    emptyText="Nenhum nicho encontrado"
+                    createText="Criar"
+                    isLoading={isLoadingNichos}
                     disabled={!editFieldsEnabled.niche}
-                  >
-                    <SelectTrigger className={!editFieldsEnabled.niche ? 'bg-muted' : ''}>
-                      <SelectValue placeholder="Selecione" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {niches.map((niche) => (
-                        <SelectItem key={niche} value={niche}>{niche}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    className={!editFieldsEnabled.niche ? 'bg-muted' : ''}
+                  />
                 </div>
                 <div className="grid gap-2">
                   <div className="flex items-center gap-2">
@@ -851,20 +1078,19 @@ export default function OffersManagement() {
                     />
                     <Label htmlFor="edit-country-check">País</Label>
                   </div>
-                  <Select 
-                    value={editCountry} 
-                    onValueChange={setEditCountry}
+                  <CreatableCombobox
+                    options={paisesOptions}
+                    value={editCountry}
+                    onChange={setEditCountry}
+                    onCreateNew={handleCreatePaisEdit}
+                    placeholder="Selecione"
+                    searchPlaceholder="Buscar país..."
+                    emptyText="Nenhum país encontrado"
+                    createText="Criar"
+                    isLoading={isLoadingPaises}
                     disabled={!editFieldsEnabled.country}
-                  >
-                    <SelectTrigger className={!editFieldsEnabled.country ? 'bg-muted' : ''}>
-                      <SelectValue placeholder="Selecione" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {countries.map((country) => (
-                        <SelectItem key={country} value={country}>{country}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    className={!editFieldsEnabled.country ? 'bg-muted' : ''}
+                  />
                 </div>
               </div>
 
@@ -888,9 +1114,9 @@ export default function OffersManagement() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="active">Ativo</SelectItem>
-                      <SelectItem value="paused">Pausado</SelectItem>
-                      <SelectItem value="archived">Arquivado</SelectItem>
+                      <SelectItem value="ativo">Ativo</SelectItem>
+                      <SelectItem value="pausado">Pausado</SelectItem>
+                      <SelectItem value="arquivado">Arquivado</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -945,7 +1171,15 @@ export default function OffersManagement() {
             <Button variant="outline" onClick={() => setIsEditSheetOpen(false)}>
               Cancelar
             </Button>
-            <Button onClick={handleSaveEdit}>Salvar Alterações</Button>
+            <Button 
+              onClick={handleSaveEdit}
+              disabled={updateOfertaMutation.isPending}
+            >
+              {updateOfertaMutation.isPending && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              Salvar Alterações
+            </Button>
           </SheetFooter>
         </SheetContent>
       </Sheet>
@@ -977,7 +1211,7 @@ export default function OffersManagement() {
             <div className="grid gap-2">
               <Label className="text-muted-foreground">Status</Label>
               <div className="flex items-center">
-                <StatusBadge status={editStatus as 'active' | 'paused' | 'archived'} />
+                <StatusBadge status={mapStatusToDisplay(editStatus)} />
               </div>
             </div>
           </div>
@@ -985,7 +1219,15 @@ export default function OffersManagement() {
             <Button variant="outline" onClick={() => setIsConfirmDialogOpen(false)}>
               Cancelar
             </Button>
-            <Button onClick={handleConfirmEdit}>Confirmar Alteração</Button>
+            <Button 
+              onClick={handleConfirmEdit}
+              disabled={updateOfertaMutation.isPending}
+            >
+              {updateOfertaMutation.isPending && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              Confirmar Alteração
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
