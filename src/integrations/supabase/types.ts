@@ -288,6 +288,27 @@ export type Database = {
         }
         Relationships: []
       }
+      paises: {
+        Row: {
+          codigo: string | null
+          created_at: string | null
+          id: string
+          nome: string
+        }
+        Insert: {
+          codigo?: string | null
+          created_at?: string | null
+          id?: string
+          nome: string
+        }
+        Update: {
+          codigo?: string | null
+          created_at?: string | null
+          id?: string
+          nome?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       criativos_com_medias: {
