@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { RefreshCw, Search, Filter } from 'lucide-react';
+import { useState, useMemo } from 'react';
+import { RefreshCw, Search, Filter, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -11,8 +11,25 @@ import {
 } from '@/components/ui/select';
 import { KPIDualCard } from '@/components/KPICard';
 import { OfferCard } from '@/components/OfferCard';
-import { mockOffers, niches, countries, calculateTotals } from '@/lib/mockData';
 import { formatCurrency, formatRoas, getMetricStatus } from '@/lib/metrics';
+import { parseThresholds } from '@/services/api';
+import { 
+  useOfertasAtivas, 
+  useTotaisOfertas, 
+  useContadorCriativos,
+  useNichos,
+  usePaises 
+} from '@/hooks/useSupabase';
+import { toast } from 'sonner';
+
+// Convert thresholds to format expected by metrics utils
+function convertThresholds(thresholds: ReturnType<typeof parseThresholds>) {
+  return {
+    roas: { green: thresholds.roas.verde, yellow: thresholds.roas.amarelo },
+    ic: { green: thresholds.ic.verde, yellow: thresholds.ic.amarelo },
+    cpc: { green: thresholds.cpc.verde, yellow: thresholds.cpc.amarelo },
+  };
+}
 
 export default function Dashboard() {
   const [searchQuery, setSearchQuery] = useState('');
@@ -20,19 +37,51 @@ export default function Dashboard() {
   const [countryFilter, setCountryFilter] = useState<string>('all');
   const [healthFilter, setHealthFilter] = useState<string>('all');
 
-  const totals = calculateTotals();
+  // Supabase hooks
+  const { data: ofertas, isLoading: isLoadingOfertas, refetch: refetchOfertas } = useOfertasAtivas();
+  const { data: totais, isLoading: isLoadingTotais, refetch: refetchTotais } = useTotaisOfertas();
+  const { data: contadorCriativos, isLoading: isLoadingContador, refetch: refetchContador } = useContadorCriativos();
+  const { data: nichos } = useNichos();
+  const { data: paises } = usePaises();
 
-  // Filter offers - only show active offers
-  const filteredOffers = mockOffers.filter((offer) => {
-    const matchesSearch = offer.name.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesNiche = nicheFilter === 'all' || offer.niche === nicheFilter;
-    const matchesCountry = countryFilter === 'all' || offer.country === countryFilter;
-    const matchesActive = offer.status === 'active'; // Only show active offers
-    const health = getMetricStatus(offer.metrics.roasTotal, 'roas', offer.thresholds);
-    const matchesHealth = healthFilter === 'all' || health === healthFilter;
+  const isLoading = isLoadingOfertas || isLoadingTotais || isLoadingContador;
+
+  const handleRefresh = () => {
+    refetchOfertas();
+    refetchTotais();
+    refetchContador();
+    toast.success('Dados atualizados!');
+  };
+
+  // Filter offers
+  const filteredOffers = useMemo(() => {
+    if (!ofertas) return [];
     
-    return matchesSearch && matchesNiche && matchesCountry && matchesActive && matchesHealth;
-  });
+    return ofertas.filter((offer) => {
+      const matchesSearch = offer.nome.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesNiche = nicheFilter === 'all' || offer.nicho === nicheFilter;
+      const matchesCountry = countryFilter === 'all' || offer.pais === countryFilter;
+      
+      // Calculate health based on ROAS (using placeholder since we don't have aggregated metrics per offer yet)
+      // In a complete implementation, we'd fetch metrics per offer
+      const thresholds = convertThresholds(parseThresholds(offer.thresholds));
+      // Placeholder ROAS - would come from metricas_diarias_oferta aggregation
+      const roasTotal = 1.2; // Placeholder
+      const health = getMetricStatus(roasTotal, 'roas', thresholds);
+      const matchesHealth = healthFilter === 'all' || health === healthFilter;
+      
+      return matchesSearch && matchesNiche && matchesCountry && matchesHealth;
+    });
+  }, [ofertas, searchQuery, nicheFilter, countryFilter, healthFilter]);
+
+  // Get unique values from database
+  const nichosList = useMemo(() => {
+    return nichos?.map(n => n.nome) || [];
+  }, [nichos]);
+
+  const paisesList = useMemo(() => {
+    return paises?.map(p => p.nome) || [];
+  }, [paises]);
 
   return (
     <div className="space-y-6">
@@ -42,8 +91,18 @@ export default function Dashboard() {
           <h1 className="text-2xl font-bold text-foreground">Painel de Ofertas Ativas</h1>
           <p className="text-sm text-muted-foreground mt-1">Visão geral de performance</p>
         </div>
-        <Button variant="outline" size="sm" className="gap-2">
-          <RefreshCw className="h-4 w-4" />
+        <Button 
+          variant="outline" 
+          size="sm" 
+          className="gap-2"
+          onClick={handleRefresh}
+          disabled={isLoading}
+        >
+          {isLoading ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <RefreshCw className="h-4 w-4" />
+          )}
           Atualizar
         </Button>
       </div>
@@ -52,30 +111,39 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <KPIDualCard
           leftLabel="Spend Total"
-          leftValue={formatCurrency(totals.spendTotal)}
+          leftValue={isLoadingTotais ? '...' : formatCurrency(totais?.total.spend || 0)}
           rightLabel="ROAS Total"
-          rightValue={formatRoas(totals.roasTotal)}
-          rightVariant={totals.roasTotal >= 1.3 ? 'success' : totals.roasTotal >= 1.1 ? 'warning' : 'danger'}
+          rightValue={isLoadingTotais ? '...' : formatRoas(totais?.total.roas || 0)}
+          rightVariant={
+            (totais?.total.roas || 0) >= 1.3 ? 'success' : 
+            (totais?.total.roas || 0) >= 1.1 ? 'warning' : 'danger'
+          }
         />
         <KPIDualCard
           leftLabel="Spend Hoje"
-          leftValue={formatCurrency(totals.spendToday)}
+          leftValue={isLoadingTotais ? '...' : formatCurrency(totais?.hoje.spend || 0)}
           rightLabel="ROAS Hoje"
-          rightValue="1.65"
-          rightVariant="success"
+          rightValue={isLoadingTotais ? '...' : formatRoas(totais?.hoje.roas || 0)}
+          rightVariant={
+            (totais?.hoje.roas || 0) >= 1.3 ? 'success' : 
+            (totais?.hoje.roas || 0) >= 1.1 ? 'warning' : 'danger'
+          }
         />
         <KPIDualCard
           leftLabel="Spend 7d"
-          leftValue={formatCurrency(totals.spend7d)}
+          leftValue={isLoadingTotais ? '...' : formatCurrency(totais?.seteDias.spend || 0)}
           rightLabel="ROAS 7d"
-          rightValue="1.52"
-          rightVariant="success"
+          rightValue={isLoadingTotais ? '...' : formatRoas(totais?.seteDias.roas || 0)}
+          rightVariant={
+            (totais?.seteDias.roas || 0) >= 1.3 ? 'success' : 
+            (totais?.seteDias.roas || 0) >= 1.1 ? 'warning' : 'danger'
+          }
         />
         <KPIDualCard
           leftLabel="Total Criativos"
-          leftValue={totals.creativeTotals.total.toString()}
+          leftValue={isLoadingContador ? '...' : (contadorCriativos?.total || 0).toString()}
           rightLabel="Liberados / Teste"
-          rightValue={`${totals.creativeTotals.active} / ${totals.creativeTotals.testing}`}
+          rightValue={isLoadingContador ? '...' : `${contadorCriativos?.liberado || 0} / ${contadorCriativos?.em_teste || 0}`}
         />
       </div>
 
@@ -102,7 +170,7 @@ export default function Dashboard() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todos Nichos</SelectItem>
-            {niches.map((niche) => (
+            {nichosList.map((niche) => (
               <SelectItem key={niche} value={niche}>{niche}</SelectItem>
             ))}
           </SelectContent>
@@ -113,7 +181,7 @@ export default function Dashboard() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todos Países</SelectItem>
-            {countries.map((country) => (
+            {paisesList.map((country) => (
               <SelectItem key={country} value={country}>{country}</SelectItem>
             ))}
           </SelectContent>
@@ -146,14 +214,24 @@ export default function Dashboard() {
         </Select>
       </div>
 
-      {/* Offer Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filteredOffers.map((offer) => (
-          <OfferCard key={offer.id} offer={offer} />
-        ))}
-      </div>
+      {/* Loading State */}
+      {isLoadingOfertas && (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      )}
 
-      {filteredOffers.length === 0 && (
+      {/* Offer Cards Grid */}
+      {!isLoadingOfertas && filteredOffers.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filteredOffers.map((offer) => (
+            <OfferCard key={offer.id} oferta={offer} />
+          ))}
+        </div>
+      )}
+
+      {/* Empty State */}
+      {!isLoadingOfertas && filteredOffers.length === 0 && (
         <div className="text-center py-12 text-muted-foreground">
           <p>Nenhuma oferta encontrada com os filtros selecionados.</p>
         </div>
