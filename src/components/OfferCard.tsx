@@ -86,7 +86,7 @@ export function OfferCard({ offer }: OfferCardProps) {
           {offer.creativesCount.testing} Em Teste
         </Badge>
         <Badge variant="outline" className="text-xs text-muted-foreground">
-          {offer.creativesCount.paused || 0} Pausados
+          {offer.creativesCount.paused || 0} Não Validados
         </Badge>
       </div>
     </Card>

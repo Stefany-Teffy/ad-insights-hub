@@ -236,6 +236,7 @@ export default function CreativesManagement() {
                       <SelectContent>
                         <SelectItem value="FB">Facebook</SelectItem>
                         <SelectItem value="YT">YouTube</SelectItem>
+                        <SelectItem value="TT">TikTok</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -264,6 +265,7 @@ export default function CreativesManagement() {
                         <SelectItem value="active">Ativo</SelectItem>
                         <SelectItem value="testing">Em Teste</SelectItem>
                         <SelectItem value="paused">Pausado</SelectItem>
+                        <SelectItem value="not_validated">Não Validado</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -358,6 +360,7 @@ export default function CreativesManagement() {
               <SelectItem value="active">Ativo</SelectItem>
               <SelectItem value="testing">Em Teste</SelectItem>
               <SelectItem value="paused">Pausado</SelectItem>
+              <SelectItem value="not_validated">Não Validado</SelectItem>
             </SelectContent>
           </Select>
           <Select value={copywriterFilter} onValueChange={setCopywriterFilter}>
@@ -476,12 +479,14 @@ export default function CreativesManagement() {
                     </TableCell>
                     <TableCell>{getOfferName(creative.offerId)}</TableCell>
                     <TableCell>
-                      <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ${
+                    <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ${
                         creative.source === 'FB' 
                           ? 'bg-info/10 text-info' 
-                          : 'bg-danger/10 text-danger'
+                          : creative.source === 'YT'
+                          ? 'bg-danger/10 text-danger'
+                          : 'bg-purple-500/10 text-purple-500'
                       }`}>
-                        {creative.source === 'FB' ? 'Facebook' : 'YouTube'}
+                        {creative.source === 'FB' ? 'Facebook' : creative.source === 'YT' ? 'YouTube' : 'TikTok'}
                       </span>
                     </TableCell>
                     <TableCell>{creative.copywriter || '-'}</TableCell>
@@ -608,6 +613,7 @@ export default function CreativesManagement() {
                     <SelectContent>
                       <SelectItem value="FB">Facebook</SelectItem>
                       <SelectItem value="YT">YouTube</SelectItem>
+                      <SelectItem value="TT">TikTok</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -660,6 +666,8 @@ export default function CreativesManagement() {
                       <SelectItem value="active">Ativo</SelectItem>
                       <SelectItem value="testing">Em Teste</SelectItem>
                       <SelectItem value="paused">Pausado</SelectItem>
+                      <SelectItem value="not_validated">Não Validado</SelectItem>
+                      <SelectItem value="archived">Arquivado</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

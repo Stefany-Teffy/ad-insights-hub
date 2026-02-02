@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Trash2, RotateCcw, Search, Image, CalendarIcon } from 'lucide-react';
+import { ArrowLeft, Trash2, Pencil, Search, Image, CalendarIcon } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Button } from '@/components/ui/button';
@@ -154,6 +154,7 @@ export default function ArchivedCreatives() {
               <SelectItem value="all">Todas Fontes</SelectItem>
               <SelectItem value="FB">Facebook</SelectItem>
               <SelectItem value="YT">YouTube</SelectItem>
+              <SelectItem value="TT">TikTok</SelectItem>
             </SelectContent>
           </Select>
           <Select value={copywriterFilter} onValueChange={setCopywriterFilter}>
@@ -256,12 +257,14 @@ export default function ArchivedCreatives() {
                     <TableCell className="font-mono text-sm">{creative.id}</TableCell>
                     <TableCell>{getOfferName(creative.offerId)}</TableCell>
                     <TableCell>
-                      <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ${
+                    <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ${
                         creative.source === 'FB' 
                           ? 'bg-info/10 text-info' 
-                          : 'bg-danger/10 text-danger'
+                          : creative.source === 'YT'
+                          ? 'bg-danger/10 text-danger'
+                          : 'bg-purple-500/10 text-purple-500'
                       }`}>
-                        {creative.source === 'FB' ? 'Facebook' : 'YouTube'}
+                        {creative.source === 'FB' ? 'Facebook' : creative.source === 'YT' ? 'YouTube' : 'TikTok'}
                       </span>
                     </TableCell>
                     <TableCell>{creative.copywriter || '-'}</TableCell>
@@ -291,15 +294,15 @@ export default function ArchivedCreatives() {
                       />
                     </TableCell>
                     <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-1">
+                    <div className="flex items-center justify-end gap-1">
                         <Button 
                           variant="ghost" 
                           size="icon" 
-                          className="h-8 w-8 text-success hover:text-success"
+                          className="h-8 w-8"
                           onClick={() => handleRestoreClick(creative)}
-                          title="Restaurar criativo"
+                          title="Editar criativo"
                         >
-                          <RotateCcw className="h-4 w-4" />
+                          <Pencil className="h-4 w-4" />
                         </Button>
                         <Button 
                           variant="ghost" 

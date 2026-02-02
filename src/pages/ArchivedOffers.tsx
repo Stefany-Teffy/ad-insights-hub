@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Trash2, RotateCcw, Search, CalendarIcon } from 'lucide-react';
+import { ArrowLeft, Trash2, Pencil, Search, CalendarIcon } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Button } from '@/components/ui/button';
@@ -243,11 +243,11 @@ export default function ArchivedOffers() {
                         <Button 
                           variant="ghost" 
                           size="icon" 
-                          className="h-8 w-8 text-success hover:text-success"
+                          className="h-8 w-8"
                           onClick={() => handleRestoreClick(offer)}
-                          title="Restaurar oferta"
+                          title="Editar oferta"
                         >
-                          <RotateCcw className="h-4 w-4" />
+                          <Pencil className="h-4 w-4" />
                         </Button>
                         <Button 
                           variant="ghost" 

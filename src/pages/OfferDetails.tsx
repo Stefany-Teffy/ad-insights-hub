@@ -322,19 +322,23 @@ export default function OfferDetails() {
                       <Input type="number" placeholder="0.00" />
                     </div>
                     <div className="grid gap-2">
-                      <Label>Impressões</Label>
-                      <Input type="number" placeholder="0" />
+                      <Label>Spend</Label>
+                      <Input type="number" placeholder="0.00" />
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="grid gap-2">
-                      <Label>Cliques</Label>
+                      <Label>Impressões</Label>
                       <Input type="number" placeholder="0" />
                     </div>
                     <div className="grid gap-2">
-                      <Label>Conversões</Label>
+                      <Label>Cliques</Label>
                       <Input type="number" placeholder="0" />
                     </div>
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Conversões</Label>
+                    <Input type="number" placeholder="0" />
                   </div>
                 </div>
               </ScrollArea>
@@ -409,15 +413,16 @@ export default function OfferDetails() {
               <SelectItem value="active">Ativo</SelectItem>
               <SelectItem value="testing">Em Teste</SelectItem>
               <SelectItem value="paused">Pausado</SelectItem>
+              <SelectItem value="not_validated">Não Validado</SelectItem>
               <SelectItem value="archived">Arquivado</SelectItem>
             </SelectContent>
           </Select>
           <Select value={copyFilter} onValueChange={setCopyFilter}>
             <SelectTrigger className="w-[150px]">
-              <SelectValue placeholder="Copy" />
+              <SelectValue placeholder="Copywriter" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Todos Copies</SelectItem>
+              <SelectItem value="all">Todos Copywriters</SelectItem>
               {copywriters.map((copy) => (
                 <SelectItem key={copy} value={copy}>{copy}</SelectItem>
               ))}
@@ -909,7 +914,7 @@ export default function OfferDetails() {
                       )}
                     </Button>
                   </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start" side="bottom" sideOffset={4}>
+                  <PopoverContent className="w-auto p-0" align="end" side="bottom" sideOffset={8} avoidCollisions={true}>
                     <Calendar
                       mode="range"
                       selected={{ from: dailyCustomDateRange.from, to: dailyCustomDateRange.to }}

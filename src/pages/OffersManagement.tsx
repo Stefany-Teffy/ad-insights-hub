@@ -890,6 +890,7 @@ export default function OffersManagement() {
                     <SelectContent>
                       <SelectItem value="active">Ativo</SelectItem>
                       <SelectItem value="paused">Pausado</SelectItem>
+                      <SelectItem value="archived">Arquivado</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
