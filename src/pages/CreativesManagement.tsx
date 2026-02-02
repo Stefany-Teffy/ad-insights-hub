@@ -352,15 +352,15 @@ export default function CreativesManagement() {
             </SelectContent>
           </Select>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-[140px]">
+            <SelectTrigger className="w-[150px]">
               <SelectValue placeholder="Status" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todos Status</SelectItem>
               <SelectItem value="active">Ativo</SelectItem>
               <SelectItem value="testing">Em Teste</SelectItem>
-              <SelectItem value="paused">Pausado</SelectItem>
               <SelectItem value="not_validated">Não Validado</SelectItem>
+              <SelectItem value="paused">Pausado</SelectItem>
             </SelectContent>
           </Select>
           <Select value={copywriterFilter} onValueChange={setCopywriterFilter}>
@@ -423,7 +423,7 @@ export default function CreativesManagement() {
         <Table>
           <TableHeader>
             <TableRow>
-              <SortableHeader field="date">Data Criação</SortableHeader>
+              <SortableHeader field="date">Data</SortableHeader>
               <TableHead className="w-[60px]">Thumb</TableHead>
               <TableHead>ID</TableHead>
               <TableHead>Oferta</TableHead>
