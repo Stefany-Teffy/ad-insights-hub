@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, Pencil, Search, Image, ArrowUpDown, CalendarIcon, Copy } from 'lucide-react';
+import { Plus, Pencil, Search, Image, ArrowUpDown, CalendarIcon, Copy, RefreshCw, Loader2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Badge } from '@/components/ui/badge';
 import {
   Table,
   TableBody,
@@ -40,16 +41,97 @@ import {
 import { Calendar } from '@/components/ui/calendar';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { StatusBadge, MetricBadge } from '@/components/MetricBadge';
-import { mockCreatives, mockOffers, copywriters } from '@/lib/mockData';
-import { formatCurrency, formatRoas, getMetricStatus } from '@/lib/metrics';
+import { MetricBadge } from '@/components/MetricBadge';
+import { CreatableCombobox } from '@/components/ui/creatable-combobox';
+import { formatCurrency, formatRoas } from '@/lib/metrics';
 import { cn } from '@/lib/utils';
+import { useToast } from '@/hooks/use-toast';
+import {
+  useCriativos,
+  useOfertasAtivas,
+  useCopywriters,
+  useCreateCriativo,
+  useUpdateCriativo,
+  useArchiveCriativo,
+  useCreateCopywriter,
+  useCriativosComMedias,
+} from '@/hooks/useSupabase';
+import { parseThresholds, type Criativo } from '@/services/api';
 
 type SortField = 'roas' | 'ic' | 'cpc' | 'date' | null;
 type SortDirection = 'asc' | 'desc';
 
+// Status mapping
+const statusLabels: Record<string, string> = {
+  nao_validado: 'Não Validado',
+  em_teste: 'Em Teste',
+  liberado: 'Liberado',
+  pausado: 'Pausado',
+  arquivado: 'Arquivado',
+};
+
+const statusColors: Record<string, string> = {
+  liberado: 'bg-success/10 text-success border-success/20',
+  em_teste: 'bg-info/10 text-info border-info/20',
+  nao_validado: 'bg-muted text-muted-foreground border-border',
+  pausado: 'bg-warning/10 text-warning border-warning/20',
+  arquivado: 'bg-danger/10 text-danger border-danger/20',
+};
+
+const fonteLabels: Record<string, string> = {
+  facebook: 'Facebook',
+  youtube: 'YouTube',
+  tiktok: 'TikTok',
+  outro: 'Outro',
+};
+
+const fonteColors: Record<string, string> = {
+  facebook: 'bg-info/10 text-info',
+  youtube: 'bg-danger/10 text-danger',
+  tiktok: 'bg-purple-500/10 text-purple-500',
+  outro: 'bg-muted text-muted-foreground',
+};
+
+// Creative Status Badge Component
+function CreativeStatusBadge({ status }: { status: string }) {
+  return (
+    <Badge 
+      variant="outline" 
+      className={cn("font-medium", statusColors[status] || statusColors.nao_validado)}
+    >
+      {statusLabels[status] || status}
+    </Badge>
+  );
+}
+
+// Fonte Badge Component
+function FonteBadge({ fonte }: { fonte: string }) {
+  return (
+    <span className={cn(
+      "inline-flex items-center rounded-md px-2 py-1 text-xs font-medium",
+      fonteColors[fonte] || fonteColors.outro
+    )}>
+      {fonteLabels[fonte] || fonte}
+    </span>
+  );
+}
+
 export default function CreativesManagement() {
   const navigate = useNavigate();
+  const { toast } = useToast();
+  
+  // Supabase hooks
+  const { data: criativos, isLoading: isLoadingCriativos, refetch } = useCriativos();
+  const { data: criativosComMedias } = useCriativosComMedias();
+  const { data: ofertas, isLoading: isLoadingOfertas } = useOfertasAtivas();
+  const { data: copywriters, isLoading: isLoadingCopywriters } = useCopywriters();
+  
+  const createCriativoMutation = useCreateCriativo();
+  const updateCriativoMutation = useUpdateCriativo();
+  const archiveCriativoMutation = useArchiveCriativo();
+  const createCopywriterMutation = useCreateCopywriter();
+  
+  // UI State
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -60,11 +142,19 @@ export default function CreativesManagement() {
   const [periodFilter, setPeriodFilter] = useState<string>('all');
   const [sortField, setSortField] = useState<SortField>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
-  const [newCreativeDate, setNewCreativeDate] = useState<Date>(new Date());
   const [customDateRange, setCustomDateRange] = useState<{ from: Date | undefined; to: Date | undefined }>({ from: undefined, to: undefined });
 
+  // New creative form state
+  const [newOferta, setNewOferta] = useState('');
+  const [newIdUnico, setNewIdUnico] = useState('');
+  const [newFonte, setNewFonte] = useState('');
+  const [newCopywriter, setNewCopywriter] = useState('');
+  const [newStatus, setNewStatus] = useState('em_teste');
+  const [newUrl, setNewUrl] = useState('');
+  const [newObservacoes, setNewObservacoes] = useState('');
+
   // Edit state
-  const [editingCreative, setEditingCreative] = useState<typeof mockCreatives[0] | null>(null);
+  const [editingCreative, setEditingCreative] = useState<Criativo | null>(null);
   const [editOffer, setEditOffer] = useState('');
   const [editId, setEditId] = useState('');
   const [editSource, setEditSource] = useState('');
@@ -84,6 +174,22 @@ export default function CreativesManagement() {
     observations: false,
   });
 
+  // Convert copywriters to combobox options
+  const copywritersOptions = (copywriters || []).map(c => ({ value: c.nome, label: c.nome }));
+
+  // Filter criativos - exclude archived
+  const activeCriativos = (criativos || []).filter(c => c.status !== 'arquivado');
+
+  // Get metrics for a creative from the view
+  const getCreativeMetrics = (criativoId: string) => {
+    const metrics = criativosComMedias?.find(m => m.id === criativoId);
+    return {
+      roas: metrics?.roas_hoje || 0,
+      ic: metrics?.ic_hoje || 0,
+      cpc: metrics?.cpc_hoje || 0,
+    };
+  };
+
   const handleSort = (field: SortField) => {
     if (sortField === field) {
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
@@ -93,12 +199,12 @@ export default function CreativesManagement() {
     }
   };
 
-  const filteredCreatives = mockCreatives.filter((creative) => {
-    const matchesSearch = creative.id.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesOffer = offerFilter === 'all' || creative.offerId === offerFilter;
-    const matchesSource = sourceFilter === 'all' || creative.source === sourceFilter;
+  const filteredCreatives = activeCriativos.filter((creative) => {
+    const matchesSearch = creative.id_unico.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesOffer = offerFilter === 'all' || creative.oferta_id === offerFilter;
+    const matchesSource = sourceFilter === 'all' || creative.fonte === sourceFilter;
     const matchesStatus = statusFilter === 'all' || creative.status === statusFilter;
-    const matchesCopywriter = copywriterFilter === 'all' || creative.copywriter === copywriterFilter;
+    const matchesCopywriter = copywriterFilter === 'all' || creative.copy_responsavel === copywriterFilter;
     
     return matchesSearch && matchesOffer && matchesSource && matchesStatus && matchesCopywriter;
   });
@@ -107,28 +213,25 @@ export default function CreativesManagement() {
     if (!sortField) return 0;
     
     let aValue: number, bValue: number;
-    
-    const aSpend = a.metrics.reduce((sum, m) => sum + m.spend, 0);
-    const aRevenue = a.metrics.reduce((sum, m) => sum + m.revenue, 0);
-    const bSpend = b.metrics.reduce((sum, m) => sum + m.spend, 0);
-    const bRevenue = b.metrics.reduce((sum, m) => sum + m.revenue, 0);
+    const aMetrics = getCreativeMetrics(a.id);
+    const bMetrics = getCreativeMetrics(b.id);
     
     switch (sortField) {
       case 'roas':
-        aValue = aSpend > 0 ? aRevenue / aSpend : 0;
-        bValue = bSpend > 0 ? bRevenue / bSpend : 0;
+        aValue = aMetrics.roas;
+        bValue = bMetrics.roas;
         break;
       case 'ic':
-        aValue = 45 + (a.id.length % 20);
-        bValue = 45 + (b.id.length % 20);
+        aValue = aMetrics.ic;
+        bValue = bMetrics.ic;
         break;
       case 'cpc':
-        aValue = 1.2 + (a.id.length % 10) / 10;
-        bValue = 1.2 + (b.id.length % 10) / 10;
+        aValue = aMetrics.cpc;
+        bValue = bMetrics.cpc;
         break;
       case 'date':
-        aValue = new Date(a.createdAt).getTime();
-        bValue = new Date(b.createdAt).getTime();
+        aValue = new Date(a.created_at || '').getTime();
+        bValue = new Date(b.created_at || '').getTime();
         break;
       default:
         return 0;
@@ -137,26 +240,95 @@ export default function CreativesManagement() {
     return sortDirection === 'asc' ? aValue - bValue : bValue - aValue;
   });
 
-  const getOfferName = (offerId: string) => {
-    const offer = mockOffers.find((o) => o.id === offerId);
-    return offer?.name || 'N/A';
+  const getOfferName = (ofertaId: string | null) => {
+    if (!ofertaId) return 'N/A';
+    const offer = ofertas?.find((o) => o.id === ofertaId);
+    return offer?.nome || 'N/A';
   };
 
-  const getOfferThresholds = (offerId: string) => {
-    const offer = mockOffers.find((o) => o.id === offerId);
-    return offer?.thresholds || { roas: { green: 1.3, yellow: 1.1 }, ic: { green: 50, yellow: 60 }, cpc: { green: 1.5, yellow: 2 } };
+  const getOfferThresholds = (ofertaId: string | null) => {
+    if (!ofertaId) {
+      return { roas: { green: 1.3, yellow: 1.1 }, ic: { green: 50, yellow: 60 }, cpc: { green: 1.5, yellow: 2 } };
+    }
+    const offer = ofertas?.find((o) => o.id === ofertaId);
+    if (!offer) {
+      return { roas: { green: 1.3, yellow: 1.1 }, ic: { green: 50, yellow: 60 }, cpc: { green: 1.5, yellow: 2 } };
+    }
+    const t = parseThresholds(offer.thresholds);
+    return {
+      roas: { green: t.roas.verde, yellow: t.roas.amarelo },
+      ic: { green: t.ic.verde, yellow: t.ic.amarelo },
+      cpc: { green: t.cpc.verde, yellow: t.cpc.amarelo },
+    };
   };
 
-  const openEditDialog = (creative: typeof mockCreatives[0]) => {
+  const resetNewForm = () => {
+    setNewOferta('');
+    setNewIdUnico('');
+    setNewFonte('');
+    setNewCopywriter('');
+    setNewStatus('em_teste');
+    setNewUrl('');
+    setNewObservacoes('');
+  };
+
+  const handleCreateCriativo = async () => {
+    if (!newOferta || !newIdUnico || !newFonte || !newCopywriter) {
+      toast({
+        title: 'Campos obrigatórios',
+        description: 'Preencha oferta, ID único, fonte e copywriter',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    try {
+      await createCriativoMutation.mutateAsync({
+        oferta_id: newOferta,
+        id_unico: newIdUnico,
+        fonte: newFonte,
+        copy_responsavel: newCopywriter,
+        status: newStatus,
+        url: newUrl || null,
+        observacoes: newObservacoes || null,
+      });
+
+      toast({
+        title: 'Criativo cadastrado!',
+        description: `O criativo "${newIdUnico}" foi criado com sucesso.`,
+      });
+
+      resetNewForm();
+      setIsDialogOpen(false);
+    } catch (error) {
+      toast({
+        title: 'Erro ao criar criativo',
+        description: error instanceof Error ? error.message : 'Erro desconhecido',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleCreateCopywriter = async (nome: string) => {
+    await createCopywriterMutation.mutateAsync(nome);
+    setNewCopywriter(nome);
+  };
+
+  const handleCreateCopywriterEdit = async (nome: string) => {
+    await createCopywriterMutation.mutateAsync(nome);
+    setEditCopywriter(nome);
+  };
+
+  const openEditDialog = (creative: Criativo) => {
     setEditingCreative(creative);
-    setEditOffer(creative.offerId);
-    setEditId(creative.id);
-    setEditSource(creative.source);
-    setEditCopywriter(creative.copywriter || '');
-    setEditStatus(creative.status);
-    setEditStartDate(new Date(creative.createdAt));
-    setEditUrl('');
-    setEditObservations('');
+    setEditOffer(creative.oferta_id || '');
+    setEditId(creative.id_unico);
+    setEditSource(creative.fonte);
+    setEditCopywriter(creative.copy_responsavel || '');
+    setEditStatus(creative.status || 'em_teste');
+    setEditStartDate(creative.created_at ? new Date(creative.created_at) : undefined);
+    setEditUrl(creative.url || '');
+    setEditObservations(creative.observacoes || '');
     setEditFieldsEnabled({
       offer: false,
       id: false,
@@ -168,6 +340,41 @@ export default function CreativesManagement() {
       observations: false,
     });
     setIsEditDialogOpen(true);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingCreative) return;
+
+    try {
+      const updates: Record<string, any> = {};
+      
+      if (editFieldsEnabled.offer) updates.oferta_id = editOffer;
+      if (editFieldsEnabled.id) updates.id_unico = editId;
+      if (editFieldsEnabled.source) updates.fonte = editSource;
+      if (editFieldsEnabled.copywriter) updates.copy_responsavel = editCopywriter;
+      if (editFieldsEnabled.status) updates.status = editStatus;
+      if (editFieldsEnabled.url) updates.url = editUrl || null;
+      if (editFieldsEnabled.observations) updates.observacoes = editObservations || null;
+
+      await updateCriativoMutation.mutateAsync({
+        id: editingCreative.id,
+        updates,
+      });
+
+      toast({
+        title: 'Criativo atualizado!',
+        description: 'As alterações foram salvas com sucesso.',
+      });
+
+      setIsEditDialogOpen(false);
+      setEditingCreative(null);
+    } catch (error) {
+      toast({
+        title: 'Erro ao atualizar criativo',
+        description: error instanceof Error ? error.message : 'Erro desconhecido',
+        variant: 'destructive',
+      });
+    }
   };
 
   const SortableHeader = ({ field, children, className }: { field: SortField; children: React.ReactNode; className?: string }) => (
@@ -193,128 +400,142 @@ export default function CreativesManagement() {
           <h1 className="text-2xl font-bold text-foreground">Gestão de Criativos</h1>
           <p className="text-sm text-muted-foreground mt-1">Cadastre e gerencie seus criativos</p>
         </div>
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger asChild>
-            <Button className="gap-2">
-              <Plus className="h-4 w-4" />
-              Novo Criativo
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-lg max-h-[90vh]">
-            <DialogHeader>
-              <DialogTitle>Cadastro de Criativo</DialogTitle>
-              <DialogDescription>
-                Adicione um novo criativo ao banco de dados
-              </DialogDescription>
-            </DialogHeader>
-            <ScrollArea className="max-h-[60vh] pr-4">
-              <div className="grid gap-4 py-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="offer">Oferta</Label>
-                  <Select>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecione uma oferta" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {mockOffers.map((offer) => (
-                        <SelectItem key={offer.id} value={offer.id}>{offer.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="id">ID Único</Label>
-                  <Input id="id" placeholder="Ex: ID01_OFERTA_WL1" className="font-mono" />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
+        <div className="flex items-center gap-2">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            className="gap-2"
+            onClick={() => refetch()}
+            disabled={isLoadingCriativos}
+          >
+            {isLoadingCriativos ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <RefreshCw className="h-4 w-4" />
+            )}
+            Atualizar
+          </Button>
+          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+            <DialogTrigger asChild>
+              <Button className="gap-2">
+                <Plus className="h-4 w-4" />
+                Novo Criativo
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-lg max-h-[90vh]">
+              <DialogHeader>
+                <DialogTitle>Cadastro de Criativo</DialogTitle>
+                <DialogDescription>
+                  Adicione um novo criativo ao banco de dados
+                </DialogDescription>
+              </DialogHeader>
+              <ScrollArea className="max-h-[60vh] pr-4">
+                <div className="grid gap-4 py-4">
                   <div className="grid gap-2">
-                    <Label htmlFor="source">Fonte</Label>
-                    <Select>
+                    <Label htmlFor="offer">Oferta *</Label>
+                    <Select value={newOferta} onValueChange={setNewOferta}>
                       <SelectTrigger>
-                        <SelectValue placeholder="Selecione" />
+                        <SelectValue placeholder="Selecione uma oferta" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="FB">Facebook</SelectItem>
-                        <SelectItem value="YT">YouTube</SelectItem>
-                        <SelectItem value="TT">TikTok</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="copywriter">Copywriter</Label>
-                    <Select>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecione" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {copywriters.map((copywriter) => (
-                          <SelectItem key={copywriter} value={copywriter}>{copywriter}</SelectItem>
+                        {(ofertas || []).map((offer) => (
+                          <SelectItem key={offer.id} value={offer.id}>{offer.nome}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor="id">ID Único *</Label>
+                    <Input 
+                      id="id" 
+                      placeholder="Ex: ID01_OFERTA_WL1" 
+                      className="font-mono"
+                      value={newIdUnico}
+                      onChange={(e) => setNewIdUnico(e.target.value)}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="grid gap-2">
+                      <Label htmlFor="source">Fonte *</Label>
+                      <Select value={newFonte} onValueChange={setNewFonte}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selecione" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="facebook">Facebook</SelectItem>
+                          <SelectItem value="youtube">YouTube</SelectItem>
+                          <SelectItem value="tiktok">TikTok</SelectItem>
+                          <SelectItem value="outro">Outro</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="copywriter">Copywriter *</Label>
+                      <CreatableCombobox
+                        options={copywritersOptions}
+                        value={newCopywriter}
+                        onChange={setNewCopywriter}
+                        onCreateNew={handleCreateCopywriter}
+                        placeholder="Selecione"
+                        searchPlaceholder="Buscar copywriter..."
+                        emptyText="Nenhum copywriter encontrado"
+                        createText="Criar"
+                        isLoading={isLoadingCopywriters}
+                      />
+                    </div>
+                  </div>
                   <div className="grid gap-2">
                     <Label htmlFor="status">Status</Label>
-                    <Select defaultValue="testing">
+                    <Select value={newStatus} onValueChange={setNewStatus}>
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="active">Liberado</SelectItem>
-                        <SelectItem value="testing">Em Teste</SelectItem>
-                        <SelectItem value="paused">Pausado</SelectItem>
-                        <SelectItem value="not_validated">Não Validado</SelectItem>
+                        <SelectItem value="nao_validado">Não Validado</SelectItem>
+                        <SelectItem value="em_teste">Em Teste</SelectItem>
+                        <SelectItem value="liberado">Liberado</SelectItem>
+                        <SelectItem value="pausado">Pausado</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                   <div className="grid gap-2">
-                    <Label htmlFor="date">Data de Início</Label>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <Button
-                          variant="outline"
-                          className="w-full justify-start text-left font-normal"
-                        >
-                          <CalendarIcon className="mr-2 h-4 w-4" />
-                          {format(newCreativeDate, "dd/MM/yyyy", { locale: ptBR })}
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0" align="start">
-                        <Calendar
-                          mode="single"
-                          selected={newCreativeDate}
-                          onSelect={(date) => date && setNewCreativeDate(date)}
-                          initialFocus
-                          className="pointer-events-auto"
-                        />
-                      </PopoverContent>
-                    </Popover>
+                    <Label htmlFor="url">URL do Vídeo/Imagem</Label>
+                    <Input 
+                      id="url" 
+                      placeholder="https://..."
+                      value={newUrl}
+                      onChange={(e) => setNewUrl(e.target.value)}
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="observations">Observações</Label>
+                    <Textarea
+                      id="observations"
+                      placeholder="Anotações sobre o criativo..."
+                      rows={3}
+                      value={newObservacoes}
+                      onChange={(e) => setNewObservacoes(e.target.value)}
+                    />
                   </div>
                 </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="url">URL do Vídeo/Imagem</Label>
-                  <Input id="url" placeholder="https://..." />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="observations">Observações</Label>
-                  <Textarea
-                    id="observations"
-                    placeholder="Anotações sobre o criativo..."
-                    rows={3}
-                  />
-                </div>
-              </div>
-            </ScrollArea>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
-                Cancelar
-              </Button>
-              <Button onClick={() => setIsDialogOpen(false)}>Criar Criativo</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+              </ScrollArea>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+                  Cancelar
+                </Button>
+                <Button 
+                  onClick={handleCreateCriativo}
+                  disabled={createCriativoMutation.isPending}
+                >
+                  {createCriativoMutation.isPending && (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  )}
+                  Criar Criativo
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       {/* Filters */}
@@ -335,8 +556,8 @@ export default function CreativesManagement() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todas Ofertas</SelectItem>
-              {mockOffers.map((offer) => (
-                <SelectItem key={offer.id} value={offer.id}>{offer.name}</SelectItem>
+              {(ofertas || []).map((offer) => (
+                <SelectItem key={offer.id} value={offer.id}>{offer.nome}</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -346,9 +567,10 @@ export default function CreativesManagement() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todas Fontes</SelectItem>
-              <SelectItem value="FB">Facebook</SelectItem>
-              <SelectItem value="YT">YouTube</SelectItem>
-              <SelectItem value="TT">TikTok</SelectItem>
+              <SelectItem value="facebook">Facebook</SelectItem>
+              <SelectItem value="youtube">YouTube</SelectItem>
+              <SelectItem value="tiktok">TikTok</SelectItem>
+              <SelectItem value="outro">Outro</SelectItem>
             </SelectContent>
           </Select>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
@@ -357,10 +579,10 @@ export default function CreativesManagement() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todos Status</SelectItem>
-              <SelectItem value="active">Liberado</SelectItem>
-              <SelectItem value="testing">Em Teste</SelectItem>
-              <SelectItem value="not_validated">Não Validado</SelectItem>
-              <SelectItem value="paused">Pausado</SelectItem>
+              <SelectItem value="liberado">Liberado</SelectItem>
+              <SelectItem value="em_teste">Em Teste</SelectItem>
+              <SelectItem value="nao_validado">Não Validado</SelectItem>
+              <SelectItem value="pausado">Pausado</SelectItem>
             </SelectContent>
           </Select>
           <Select value={copywriterFilter} onValueChange={setCopywriterFilter}>
@@ -369,8 +591,8 @@ export default function CreativesManagement() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todos Copywriters</SelectItem>
-              {copywriters.map((copy) => (
-                <SelectItem key={copy} value={copy}>{copy}</SelectItem>
+              {(copywriters || []).map((copy) => (
+                <SelectItem key={copy.id} value={copy.nome}>{copy.nome}</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -418,123 +640,125 @@ export default function CreativesManagement() {
         </div>
       </Card>
 
-      {/* Table */}
-      <Card className="p-0 overflow-hidden">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <SortableHeader field="date">Data</SortableHeader>
-              <TableHead className="w-[60px]">Thumb</TableHead>
-              <TableHead>ID</TableHead>
-              <TableHead>Oferta</TableHead>
-              <TableHead>Fonte</TableHead>
-              <TableHead>Copywriter</TableHead>
-              <TableHead>Status</TableHead>
-              <SortableHeader field="roas" className="text-right">ROAS</SortableHeader>
-              <SortableHeader field="ic" className="text-right">IC</SortableHeader>
-              <SortableHeader field="cpc" className="text-right">CPC</SortableHeader>
-              <TableHead className="text-right">Ações</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {sortedCreatives.length === 0 ? (
+      {/* Loading State */}
+      {isLoadingCriativos ? (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      ) : (
+        /* Table */
+        <Card className="p-0 overflow-hidden">
+          <Table>
+            <TableHeader>
               <TableRow>
-                <TableCell colSpan={11} className="text-center text-muted-foreground py-8">
-                  Nenhum criativo encontrado.
-                </TableCell>
+                <SortableHeader field="date">Data</SortableHeader>
+                <TableHead className="w-[60px]">Thumb</TableHead>
+                <TableHead>ID</TableHead>
+                <TableHead>Oferta</TableHead>
+                <TableHead>Fonte</TableHead>
+                <TableHead>Copywriter</TableHead>
+                <TableHead>Status</TableHead>
+                <SortableHeader field="roas" className="text-right">ROAS</SortableHeader>
+                <SortableHeader field="ic" className="text-right">IC</SortableHeader>
+                <SortableHeader field="cpc" className="text-right">CPC</SortableHeader>
+                <TableHead className="text-right">Ações</TableHead>
               </TableRow>
-            ) : (
-              sortedCreatives.map((creative) => {
-                const totalSpend = creative.metrics.reduce((sum, m) => sum + m.spend, 0);
-                const totalRevenue = creative.metrics.reduce((sum, m) => sum + m.revenue, 0);
-                const roas = totalSpend > 0 ? totalRevenue / totalSpend : 0;
-                const ic = 45 + (creative.id.length % 20);
-                const cpc = 1.2 + (creative.id.length % 10) / 10;
-                const thresholds = getOfferThresholds(creative.offerId);
+            </TableHeader>
+            <TableBody>
+              {sortedCreatives.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={11} className="text-center text-muted-foreground py-8">
+                    Nenhum criativo encontrado.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                sortedCreatives.map((creative) => {
+                  const metrics = getCreativeMetrics(creative.id);
+                  const thresholds = getOfferThresholds(creative.oferta_id);
 
-                return (
-                  <TableRow key={creative.id}>
-                    <TableCell>{new Date(creative.createdAt).toLocaleDateString('pt-BR')}</TableCell>
-                    <TableCell>
-                      <div className="h-10 w-10 rounded bg-muted flex items-center justify-center">
-                        <Image className="h-4 w-4 text-muted-foreground" />
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-sm">{creative.id}</span>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6"
-                          onClick={() => {
-                            navigator.clipboard.writeText(creative.id);
-                            import('sonner').then(({ toast }) => toast.success('ID copiado!'));
-                          }}
-                          title="Copiar ID"
-                        >
-                          <Copy className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                    <TableCell>{getOfferName(creative.offerId)}</TableCell>
-                    <TableCell>
-                    <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ${
-                        creative.source === 'FB' 
-                          ? 'bg-info/10 text-info' 
-                          : creative.source === 'YT'
-                          ? 'bg-danger/10 text-danger'
-                          : 'bg-purple-500/10 text-purple-500'
-                      }`}>
-                        {creative.source === 'FB' ? 'Facebook' : creative.source === 'YT' ? 'YouTube' : 'TikTok'}
-                      </span>
-                    </TableCell>
-                    <TableCell>{creative.copywriter || '-'}</TableCell>
-                    <TableCell><StatusBadge status={creative.status} /></TableCell>
-                    <TableCell className="text-right">
-                      <MetricBadge
-                        value={roas}
-                        metricType="roas"
-                        thresholds={thresholds}
-                        format={formatRoas}
-                      />
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <MetricBadge
-                        value={ic}
-                        metricType="ic"
-                        thresholds={thresholds}
-                        format={(v) => formatCurrency(v)}
-                      />
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <MetricBadge
-                        value={cpc}
-                        metricType="cpc"
-                        thresholds={thresholds}
-                        format={(v) => formatCurrency(v)}
-                      />
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
-                          className="h-8 w-8"
-                          onClick={() => openEditDialog(creative)}
-                          title="Editar criativo"
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                );
-              })
-            )}
-          </TableBody>
-        </Table>
-      </Card>
+                  return (
+                    <TableRow key={creative.id}>
+                      <TableCell>
+                        {creative.created_at 
+                          ? new Date(creative.created_at).toLocaleDateString('pt-BR')
+                          : '-'
+                        }
+                      </TableCell>
+                      <TableCell>
+                        <div className="h-10 w-10 rounded bg-muted flex items-center justify-center">
+                          <Image className="h-4 w-4 text-muted-foreground" />
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-sm">{creative.id_unico}</span>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6"
+                            onClick={() => {
+                              navigator.clipboard.writeText(creative.id_unico);
+                              toast({ title: 'ID copiado!' });
+                            }}
+                            title="Copiar ID"
+                          >
+                            <Copy className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                      <TableCell>{getOfferName(creative.oferta_id)}</TableCell>
+                      <TableCell>
+                        <FonteBadge fonte={creative.fonte} />
+                      </TableCell>
+                      <TableCell>{creative.copy_responsavel || '-'}</TableCell>
+                      <TableCell>
+                        <CreativeStatusBadge status={creative.status || 'nao_validado'} />
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <MetricBadge
+                          value={metrics.roas}
+                          metricType="roas"
+                          thresholds={thresholds}
+                          format={formatRoas}
+                        />
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <MetricBadge
+                          value={metrics.ic}
+                          metricType="ic"
+                          thresholds={thresholds}
+                          format={(v) => formatCurrency(v)}
+                        />
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <MetricBadge
+                          value={metrics.cpc}
+                          metricType="cpc"
+                          thresholds={thresholds}
+                          format={(v) => formatCurrency(v)}
+                        />
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="h-8 w-8"
+                            onClick={() => openEditDialog(creative)}
+                            title="Editar criativo"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              )}
+            </TableBody>
+          </Table>
+        </Card>
+      )}
 
       {/* Edit Dialog */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
@@ -566,8 +790,8 @@ export default function CreativesManagement() {
                     <SelectValue placeholder="Selecione uma oferta" />
                   </SelectTrigger>
                   <SelectContent>
-                    {mockOffers.map((offer) => (
-                      <SelectItem key={offer.id} value={offer.id}>{offer.name}</SelectItem>
+                    {(ofertas || []).map((offer) => (
+                      <SelectItem key={offer.id} value={offer.id}>{offer.nome}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -611,9 +835,10 @@ export default function CreativesManagement() {
                       <SelectValue placeholder="Selecione" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="FB">Facebook</SelectItem>
-                      <SelectItem value="YT">YouTube</SelectItem>
-                      <SelectItem value="TT">TikTok</SelectItem>
+                      <SelectItem value="facebook">Facebook</SelectItem>
+                      <SelectItem value="youtube">YouTube</SelectItem>
+                      <SelectItem value="tiktok">TikTok</SelectItem>
+                      <SelectItem value="outro">Outro</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -626,85 +851,48 @@ export default function CreativesManagement() {
                     />
                     <Label htmlFor="edit-copywriter-check">Copywriter</Label>
                   </div>
-                  <Select 
-                    value={editCopywriter} 
-                    onValueChange={setEditCopywriter}
+                  <CreatableCombobox
+                    options={copywritersOptions}
+                    value={editCopywriter}
+                    onChange={setEditCopywriter}
+                    onCreateNew={handleCreateCopywriterEdit}
+                    placeholder="Selecione"
+                    searchPlaceholder="Buscar copywriter..."
+                    emptyText="Nenhum copywriter encontrado"
+                    createText="Criar"
+                    isLoading={isLoadingCopywriters}
                     disabled={!editFieldsEnabled.copywriter}
-                  >
-                    <SelectTrigger className={!editFieldsEnabled.copywriter ? 'bg-muted' : ''}>
-                      <SelectValue placeholder="Selecione" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {copywriters.map((copywriter) => (
-                        <SelectItem key={copywriter} value={copywriter}>{copywriter}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    className={!editFieldsEnabled.copywriter ? 'bg-muted' : ''}
+                  />
                 </div>
               </div>
 
-              {/* Status and Start Date */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="grid gap-2">
-                  <div className="flex items-center gap-2">
-                    <Checkbox
-                      id="edit-status-check"
-                      checked={editFieldsEnabled.status}
-                      onCheckedChange={(checked) => setEditFieldsEnabled(prev => ({ ...prev, status: !!checked }))}
-                    />
-                    <Label htmlFor="edit-status-check">Status</Label>
-                  </div>
-                  <Select 
-                    value={editStatus} 
-                    onValueChange={setEditStatus}
-                    disabled={!editFieldsEnabled.status}
-                  >
-                    <SelectTrigger className={!editFieldsEnabled.status ? 'bg-muted' : ''}>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="active">Liberado</SelectItem>
-                      <SelectItem value="testing">Em Teste</SelectItem>
-                      <SelectItem value="paused">Pausado</SelectItem>
-                      <SelectItem value="not_validated">Não Validado</SelectItem>
-                      <SelectItem value="archived">Arquivado</SelectItem>
-                    </SelectContent>
-                  </Select>
+              {/* Status */}
+              <div className="grid gap-2">
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="edit-status-check"
+                    checked={editFieldsEnabled.status}
+                    onCheckedChange={(checked) => setEditFieldsEnabled(prev => ({ ...prev, status: !!checked }))}
+                  />
+                  <Label htmlFor="edit-status-check">Status</Label>
                 </div>
-                <div className="grid gap-2">
-                  <div className="flex items-center gap-2">
-                    <Checkbox
-                      id="edit-start-date-check"
-                      checked={editFieldsEnabled.startDate}
-                      onCheckedChange={(checked) => setEditFieldsEnabled(prev => ({ ...prev, startDate: !!checked }))}
-                    />
-                    <Label htmlFor="edit-start-date-check">Data de Início</Label>
-                  </div>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        className={cn(
-                          "w-full justify-start text-left font-normal",
-                          !editFieldsEnabled.startDate && 'bg-muted'
-                        )}
-                        disabled={!editFieldsEnabled.startDate}
-                      >
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {editStartDate ? format(editStartDate, "dd/MM/yyyy", { locale: ptBR }) : "Selecionar"}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar
-                        mode="single"
-                        selected={editStartDate}
-                        onSelect={setEditStartDate}
-                        initialFocus
-                        className="pointer-events-auto"
-                      />
-                    </PopoverContent>
-                  </Popover>
-                </div>
+                <Select 
+                  value={editStatus} 
+                  onValueChange={setEditStatus}
+                  disabled={!editFieldsEnabled.status}
+                >
+                  <SelectTrigger className={!editFieldsEnabled.status ? 'bg-muted' : ''}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="nao_validado">Não Validado</SelectItem>
+                    <SelectItem value="em_teste">Em Teste</SelectItem>
+                    <SelectItem value="liberado">Liberado</SelectItem>
+                    <SelectItem value="pausado">Pausado</SelectItem>
+                    <SelectItem value="arquivado">Arquivado</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
 
               {/* URL field */}
@@ -761,7 +949,15 @@ export default function CreativesManagement() {
             <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
               Cancelar
             </Button>
-            <Button onClick={() => setIsEditDialogOpen(false)}>Salvar Alterações</Button>
+            <Button 
+              onClick={handleSaveEdit}
+              disabled={updateCriativoMutation.isPending}
+            >
+              {updateCriativoMutation.isPending && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              Salvar Alterações
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
