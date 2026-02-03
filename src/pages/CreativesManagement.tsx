@@ -147,7 +147,7 @@ export default function CreativesManagement() {
 
   // New creative form state
   const [newOferta, setNewOferta] = useState('');
-  const [newIdUnico, setNewIdUnico] = useState('');
+  const [newIdUnico, setNewIdUnico] = useState('ID01_OFERTA_WL1');
   const [newFonte, setNewFonte] = useState('');
   const [newCopywriter, setNewCopywriter] = useState('');
   const [newStatus, setNewStatus] = useState('em_teste');
@@ -286,7 +286,7 @@ export default function CreativesManagement() {
 
   const resetNewForm = () => {
     setNewOferta('');
-    setNewIdUnico('');
+    setNewIdUnico('ID01_OFERTA_WL1');
     setNewFonte('');
     setNewCopywriter('');
     setNewStatus('em_teste');
