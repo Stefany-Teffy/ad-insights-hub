@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, Pencil, Search, ArrowUpDown, Eye, RefreshCw, Loader2, CalendarIcon } from 'lucide-react';
+import { Plus, Pencil, Search, ArrowUpDown, Eye, RefreshCw, Loader2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -44,7 +44,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import { Calendar } from '@/components/ui/calendar';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { StatusBadge, MetricBadge } from '@/components/MetricBadge';
@@ -131,13 +130,11 @@ export default function OffersManagement() {
   const [editNiche, setEditNiche] = useState('');
   const [editCountry, setEditCountry] = useState('');
   const [editStatus, setEditStatus] = useState('');
-  const [editStartDate, setEditStartDate] = useState<Date | undefined>(undefined);
   const [editFieldsEnabled, setEditFieldsEnabled] = useState({
     name: false,
     niche: false,
     country: false,
     status: false,
-    startDate: false,
   });
 
   // Convert nichos/paises to combobox options
@@ -301,13 +298,11 @@ export default function OffersManagement() {
     setEditNiche(offer.nicho);
     setEditCountry(offer.pais);
     setEditStatus(offer.status || 'ativo');
-    setEditStartDate(new Date(offer.data));
     setEditFieldsEnabled({
       name: false,
       niche: false,
       country: false,
       status: false,
-      startDate: false,
     });
     setIsEditSheetOpen(true);
   };
@@ -331,9 +326,6 @@ export default function OffersManagement() {
       if (editFieldsEnabled.niche) updates.nicho = editNiche;
       if (editFieldsEnabled.country) updates.pais = editCountry;
       if (editFieldsEnabled.status) updates.status = editStatus;
-      if (editFieldsEnabled.startDate && editStartDate) {
-        updates.data = format(editStartDate, 'yyyy-MM-dd');
-      }
 
       await updateOfertaMutation.mutateAsync({
         id: editingOffer.id,
@@ -461,42 +453,17 @@ export default function OffersManagement() {
                       />
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="grid gap-2">
-                      <Label htmlFor="status">Status</Label>
-                      <Select value={newOfferStatus} onValueChange={setNewOfferStatus}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="ativo">Ativo</SelectItem>
-                          <SelectItem value="pausado">Pausado</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="grid gap-2">
-                      <Label htmlFor="date">Data de Início</Label>
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <Button
-                            variant="outline"
-                            className="w-full justify-start text-left font-normal"
-                          >
-                            <CalendarIcon className="mr-2 h-4 w-4" />
-                            {format(newOfferDate, "dd/MM/yyyy", { locale: ptBR })}
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0" align="start">
-                          <Calendar
-                            mode="single"
-                            selected={newOfferDate}
-                            onSelect={(date) => date && setNewOfferDate(date)}
-                            initialFocus
-                            className="pointer-events-auto"
-                          />
-                        </PopoverContent>
-                      </Popover>
-                    </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="status">Status</Label>
+                    <Select value={newOfferStatus} onValueChange={setNewOfferStatus}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="ativo">Ativo</SelectItem>
+                        <SelectItem value="pausado">Pausado</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
 
                   {/* ROAS Threshold Section */}
@@ -922,66 +889,30 @@ export default function OffersManagement() {
                 </div>
               </div>
 
-              {/* Status and Start Date */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="grid gap-2">
-                  <div className="flex items-center gap-2">
-                    <Checkbox
-                      id="edit-status-check"
-                      checked={editFieldsEnabled.status}
-                      onCheckedChange={(checked) => setEditFieldsEnabled(prev => ({ ...prev, status: !!checked }))}
-                    />
-                    <Label htmlFor="edit-status-check">Status</Label>
-                  </div>
-                  <Select 
-                    value={editStatus} 
-                    onValueChange={setEditStatus}
-                    disabled={!editFieldsEnabled.status}
-                  >
-                    <SelectTrigger className={!editFieldsEnabled.status ? 'bg-muted' : ''}>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="ativo">Ativo</SelectItem>
-                      <SelectItem value="pausado">Pausado</SelectItem>
-                      <SelectItem value="arquivado">Arquivado</SelectItem>
-                    </SelectContent>
-                  </Select>
+              {/* Status */}
+              <div className="grid gap-2">
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="edit-status-check"
+                    checked={editFieldsEnabled.status}
+                    onCheckedChange={(checked) => setEditFieldsEnabled(prev => ({ ...prev, status: !!checked }))}
+                  />
+                  <Label htmlFor="edit-status-check">Status</Label>
                 </div>
-                <div className="grid gap-2">
-                  <div className="flex items-center gap-2">
-                    <Checkbox
-                      id="edit-start-date-check"
-                      checked={editFieldsEnabled.startDate}
-                      onCheckedChange={(checked) => setEditFieldsEnabled(prev => ({ ...prev, startDate: !!checked }))}
-                    />
-                    <Label htmlFor="edit-start-date-check">Data de Início</Label>
-                  </div>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        className={cn(
-                          "w-full justify-start text-left font-normal",
-                          !editFieldsEnabled.startDate && 'bg-muted'
-                        )}
-                        disabled={!editFieldsEnabled.startDate}
-                      >
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {editStartDate ? format(editStartDate, "dd/MM/yyyy", { locale: ptBR }) : "Selecionar"}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar
-                        mode="single"
-                        selected={editStartDate}
-                        onSelect={setEditStartDate}
-                        initialFocus
-                        className="pointer-events-auto"
-                      />
-                    </PopoverContent>
-                  </Popover>
-                </div>
+                <Select 
+                  value={editStatus} 
+                  onValueChange={setEditStatus}
+                  disabled={!editFieldsEnabled.status}
+                >
+                  <SelectTrigger className={!editFieldsEnabled.status ? 'bg-muted' : ''}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ativo">Ativo</SelectItem>
+                    <SelectItem value="pausado">Pausado</SelectItem>
+                    <SelectItem value="arquivado">Arquivado</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
 
               {/* Edit date (locked) */}
