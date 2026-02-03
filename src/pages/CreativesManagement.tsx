@@ -295,8 +295,16 @@ export default function CreativesManagement() {
   };
 
   const handleCreateCriativo = async () => {
-    if (!newOferta || !newIdUnico || !newFonte || !newCopywriter) {
-      toast.error('Preencha oferta, ID único, fonte e copywriter');
+    if (!newOferta || !newIdUnico || !newFonte || !newCopywriter || !newStatus || !newUrl) {
+      toast.error('Preencha todos os campos obrigatórios');
+      return;
+    }
+
+    // Validate URL format
+    try {
+      new URL(newUrl);
+    } catch {
+      toast.error('URL inválida. Insira uma URL válida (ex: https://...)');
       return;
     }
 
@@ -494,7 +502,7 @@ export default function CreativesManagement() {
                     </div>
                   </div>
                   <div className="grid gap-2">
-                    <Label htmlFor="status">Status</Label>
+                    <Label htmlFor="status">Status <span className="text-destructive">*</span></Label>
                     <Select value={newStatus} onValueChange={setNewStatus}>
                       <SelectTrigger>
                         <SelectValue />
@@ -508,7 +516,7 @@ export default function CreativesManagement() {
                     </Select>
                   </div>
                   <div className="grid gap-2">
-                    <Label htmlFor="url">URL do Vídeo/Imagem</Label>
+                    <Label htmlFor="url">URL do Vídeo/Imagem <span className="text-destructive">*</span></Label>
                     <Input 
                       id="url" 
                       placeholder="https://..."
