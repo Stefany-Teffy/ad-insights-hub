@@ -29,7 +29,7 @@ import { ThresholdsDialog } from '@/components/ThresholdsDialog';
 import { formatCurrency, formatRoas, getMetricStatus, getMetricClass, copyToClipboard } from '@/lib/metrics';
 import { formatDate } from '@/lib/format';
 import { parseThresholds, type Thresholds, type Criativo, type MetricaDiariaOferta } from '@/services/api';
-import { useOferta, useMetricasOferta, useCriativosPorOferta, useCopywriters } from '@/hooks/useSupabase';
+import { useOferta, useMetricasOferta, useCriativosPorOferta, useCopywriters, useCriativosComMedias } from '@/hooks/useSupabase';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
@@ -90,6 +90,7 @@ export default function OfferDetails() {
   const { data: criativosFB, isLoading: isLoadingFB, refetch: refetchFB } = useCriativosPorOferta(id || '', 'facebook');
   const { data: criativosYT, isLoading: isLoadingYT, refetch: refetchYT } = useCriativosPorOferta(id || '', 'youtube');
   const { data: criativosTT, isLoading: isLoadingTT, refetch: refetchTT } = useCriativosPorOferta(id || '', 'tiktok');
+  const { data: criativosComMedias, refetch: refetchCriativosMedias } = useCriativosComMedias({ ofertaId: id || '' });
   const { data: copywriters } = useCopywriters();
 
   const isLoading = isLoadingOferta || isLoadingMetricas;
@@ -100,7 +101,39 @@ export default function OfferDetails() {
     refetchFB();
     refetchYT();
     refetchTT();
+    refetchCriativosMedias();
     toast.success('Dados atualizados!');
+  };
+
+  // Get metrics for a creative from the view based on period
+  const getCreativeMetrics = (criativoId: string) => {
+    const metrics = criativosComMedias?.find(m => m.id === criativoId);
+    if (!metrics) return { spend: 0, roas: 0, ic: 0, cpc: 0 };
+    
+    // Select metrics based on period
+    if (periodo.tipo === 'today') {
+      return {
+        spend: metrics.spend_hoje || 0,
+        roas: metrics.roas_hoje || 0,
+        ic: metrics.ic_hoje || 0,
+        cpc: metrics.cpc_hoje || 0,
+      };
+    } else if (periodo.tipo === '7d') {
+      return {
+        spend: metrics.spend_7d || 0,
+        roas: metrics.roas_7d || 0,
+        ic: metrics.ic_7d || 0,
+        cpc: 0, // View doesn't have cpc_7d
+      };
+    } else {
+      // Default to 7d metrics for other periods (30d, custom, all)
+      return {
+        spend: metrics.spend_7d || 0,
+        roas: metrics.roas_7d || 0,
+        ic: metrics.ic_7d || 0,
+        cpc: 0,
+      };
+    }
   };
 
   // Parse thresholds from the offer
@@ -285,11 +318,9 @@ export default function OfferDetails() {
                   </TableRow>
                 ) : (
                   filtered.map((criativo) => {
-                    // Placeholder metrics - would come from criativos_com_medias view in a full implementation
-                    const spend = 0;
-                    const roas = 0;
-                    const ic = 0;
-                    const cpc = 0;
+                    // Get real metrics from criativos_com_medias view
+                    const metrics = getCreativeMetrics(criativo.id);
+                    const { spend, roas, ic, cpc } = metrics;
 
                     return (
                       <TableRow key={criativo.id}>

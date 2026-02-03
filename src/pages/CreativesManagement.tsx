@@ -179,14 +179,35 @@ export default function CreativesManagement() {
   // Filter criativos - exclude archived
   const activeCriativos = (criativos || []).filter(c => c.status !== 'arquivado');
 
-  // Get metrics for a creative from the view
+  // Get metrics for a creative from the view based on period
   const getCreativeMetrics = (criativoId: string) => {
     const metrics = criativosComMedias?.find(m => m.id === criativoId);
-    return {
-      roas: metrics?.roas_hoje || 0,
-      ic: metrics?.ic_hoje || 0,
-      cpc: metrics?.cpc_hoje || 0,
-    };
+    if (!metrics) return { spend: 0, roas: 0, ic: 0, cpc: 0 };
+    
+    // Select metrics based on period
+    if (periodo.tipo === 'today') {
+      return {
+        spend: metrics.spend_hoje || 0,
+        roas: metrics.roas_hoje || 0,
+        ic: metrics.ic_hoje || 0,
+        cpc: metrics.cpc_hoje || 0,
+      };
+    } else if (periodo.tipo === '7d') {
+      return {
+        spend: metrics.spend_7d || 0,
+        roas: metrics.roas_7d || 0,
+        ic: metrics.ic_7d || 0,
+        cpc: 0,
+      };
+    } else {
+      // Default to 7d metrics for other periods
+      return {
+        spend: metrics.spend_7d || 0,
+        roas: metrics.roas_7d || 0,
+        ic: metrics.ic_7d || 0,
+        cpc: 0,
+      };
+    }
   };
 
   const handleSort = (field: SortField) => {
