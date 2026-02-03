@@ -135,6 +135,7 @@ export default function CreativesManagement() {
   // UI State
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isConfirmDialogOpen, setIsConfirmDialogOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [offerFilter, setOfferFilter] = useState<string>('all');
   const [sourceFilter, setSourceFilter] = useState<string>('all');
@@ -352,7 +353,11 @@ export default function CreativesManagement() {
     setIsEditDialogOpen(true);
   };
 
-  const handleSaveEdit = async () => {
+  const handleSaveEdit = () => {
+    setIsConfirmDialogOpen(true);
+  };
+
+  const handleConfirmEdit = async () => {
     if (!editingCreative) return;
 
     try {
@@ -373,6 +378,7 @@ export default function CreativesManagement() {
 
       toast.success('As alterações foram salvas com sucesso.');
 
+      setIsConfirmDialogOpen(false);
       setIsEditDialogOpen(false);
       setEditingCreative(null);
     } catch (error) {
@@ -919,6 +925,72 @@ export default function CreativesManagement() {
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               )}
               Salvar Alterações
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirmation Dialog */}
+      <Dialog open={isConfirmDialogOpen} onOpenChange={setIsConfirmDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirmar Alterações</DialogTitle>
+            <DialogDescription>
+              Revise as informações antes de confirmar
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label className="text-muted-foreground">ID do Criativo</Label>
+              <Input value={editId} disabled className="bg-muted font-mono" />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label className="text-muted-foreground">Oferta</Label>
+                <Input value={getOfferName(editOffer)} disabled className="bg-muted" />
+              </div>
+              <div className="grid gap-2">
+                <Label className="text-muted-foreground">Fonte</Label>
+                <Input value={fonteLabels[editSource] || editSource} disabled className="bg-muted" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label className="text-muted-foreground">Copywriter</Label>
+                <Input value={editCopywriter || '-'} disabled className="bg-muted" />
+              </div>
+              <div className="grid gap-2">
+                <Label className="text-muted-foreground">Status</Label>
+                <div className="flex items-center h-10">
+                  <CreativeStatusBadge status={editStatus} />
+                </div>
+              </div>
+            </div>
+            {editUrl && (
+              <div className="grid gap-2">
+                <Label className="text-muted-foreground">URL</Label>
+                <Input value={editUrl} disabled className="bg-muted text-xs" />
+              </div>
+            )}
+            {editObservations && (
+              <div className="grid gap-2">
+                <Label className="text-muted-foreground">Observações</Label>
+                <Textarea value={editObservations} disabled className="bg-muted" rows={2} />
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsConfirmDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button 
+              onClick={handleConfirmEdit}
+              disabled={updateCriativoMutation.isPending}
+            >
+              {updateCriativoMutation.isPending && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              Confirmar Alteração
             </Button>
           </DialogFooter>
         </DialogContent>
