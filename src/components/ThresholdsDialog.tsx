@@ -154,7 +154,7 @@ export function ThresholdsDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Métricas Esperadas</DialogTitle>
           <DialogDescription>
@@ -162,7 +162,7 @@ export function ThresholdsDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-6">
+        <div className="space-y-6 pb-2">
           {/* Offer Info - Always read-only */}
           <div className="space-y-3">
             <div className="grid grid-cols-3 gap-4">
