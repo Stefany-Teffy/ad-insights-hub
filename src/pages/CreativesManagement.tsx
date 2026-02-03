@@ -422,7 +422,10 @@ export default function CreativesManagement() {
             variant="outline" 
             size="sm" 
             className="gap-2"
-            onClick={() => refetch()}
+            onClick={async () => {
+              await refetch();
+              toast.success('Dados atualizados!');
+            }}
             disabled={isLoadingCriativos}
           >
             {isLoadingCriativos ? (

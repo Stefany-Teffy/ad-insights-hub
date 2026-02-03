@@ -138,9 +138,9 @@ export default function OffersManagement() {
   const paisesOptions = (paises || []).map(p => ({ value: p.nome, label: p.nome }));
 
   // Refresh function
-  const handleRefresh = () => {
-    refetchMetricas();
-    refetchOfertas();
+  const handleRefresh = async () => {
+    await Promise.all([refetchMetricas(), refetchOfertas()]);
+    toast.success('Dados atualizados!');
   };
 
   const handleSort = (field: SortField) => {
