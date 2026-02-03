@@ -18,7 +18,9 @@ import {
   useTotaisOfertas, 
   useContadorCriativos,
   useNichos,
-  usePaises 
+  usePaises,
+  useAllOffersAggregatedMetrics,
+  useCreativesCountByOffer,
 } from '@/hooks/useSupabase';
 import { toast } from 'sonner';
 
@@ -43,6 +45,8 @@ export default function Dashboard() {
   const { data: contadorCriativos, isLoading: isLoadingContador, refetch: refetchContador } = useContadorCriativos();
   const { data: nichos } = useNichos();
   const { data: paises } = usePaises();
+  const { data: aggregatedMetrics, refetch: refetchMetrics } = useAllOffersAggregatedMetrics();
+  const { data: creativesCountByOffer, refetch: refetchCreativesCount } = useCreativesCountByOffer();
 
   const isLoading = isLoadingOfertas || isLoadingTotais || isLoadingContador;
 
@@ -50,10 +54,12 @@ export default function Dashboard() {
     refetchOfertas();
     refetchTotais();
     refetchContador();
+    refetchMetrics();
+    refetchCreativesCount();
     toast.success('Dados atualizados!');
   };
 
-  // Filter offers
+  // Filter offers using REAL aggregated metrics
   const filteredOffers = useMemo(() => {
     if (!ofertas) return [];
     
@@ -62,17 +68,16 @@ export default function Dashboard() {
       const matchesNiche = nicheFilter === 'all' || offer.nicho === nicheFilter;
       const matchesCountry = countryFilter === 'all' || offer.pais === countryFilter;
       
-      // Calculate health based on ROAS (using placeholder since we don't have aggregated metrics per offer yet)
-      // In a complete implementation, we'd fetch metrics per offer
+      // Calculate health based on REAL ROAS from aggregated metrics
       const thresholds = convertThresholds(parseThresholds(offer.thresholds));
-      // Placeholder ROAS - would come from metricas_diarias_oferta aggregation
-      const roasTotal = 1.2; // Placeholder
+      const offerMetrics = aggregatedMetrics?.get(offer.id);
+      const roasTotal = offerMetrics?.roasTotal ?? 0;
       const health = getMetricStatus(roasTotal, 'roas', thresholds);
       const matchesHealth = healthFilter === 'all' || health === healthFilter;
       
       return matchesSearch && matchesNiche && matchesCountry && matchesHealth;
     });
-  }, [ofertas, searchQuery, nicheFilter, countryFilter, healthFilter]);
+  }, [ofertas, searchQuery, nicheFilter, countryFilter, healthFilter, aggregatedMetrics]);
 
   // Get unique values from database
   const nichosList = useMemo(() => {
@@ -225,7 +230,12 @@ export default function Dashboard() {
       {!isLoadingOfertas && filteredOffers.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredOffers.map((offer) => (
-            <OfferCard key={offer.id} oferta={offer} />
+            <OfferCard 
+              key={offer.id} 
+              oferta={offer} 
+              metrics={aggregatedMetrics?.get(offer.id)}
+              creativesCount={creativesCountByOffer?.get(offer.id)}
+            />
           ))}
         </div>
       )}

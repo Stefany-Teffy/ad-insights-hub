@@ -59,6 +59,8 @@ export const queryKeys = {
   metricas: {
     byCriativo: (criativoId: string, periodo?: string) => ['metricas', 'criativo', criativoId, periodo] as const,
     byOferta: (ofertaId: string, periodo?: string) => ['metricas', 'oferta', ofertaId, periodo] as const,
+    aggregatedByOferta: (ofertaId: string) => ['metricas', 'aggregated', ofertaId] as const,
+    allAggregated: () => ['metricas', 'allAggregated'] as const,
     totais: () => ['metricas', 'totais'] as const,
     contadorCriativos: () => ['metricas', 'contadorCriativos'] as const,
   },
@@ -397,6 +399,109 @@ export function useContadorCriativos() {
         active,
         testing,
       };
+    },
+  });
+}
+
+// Tipo para métricas agregadas por oferta
+export interface OfferAggregatedMetrics {
+  ofertaId: string;
+  spendTotal: number;
+  spendToday: number;
+  spend7d: number;
+  faturadoTotal: number;
+  faturadoToday: number;
+  faturado7d: number;
+  roasTotal: number;
+  roasToday: number;
+  roas7d: number;
+}
+
+// Hook para buscar métricas agregadas de TODAS as ofertas (para Dashboard)
+export function useAllOffersAggregatedMetrics() {
+  return useQuery({
+    queryKey: queryKeys.metricas.allAggregated(),
+    queryFn: async () => {
+      const hoje = new Date().toISOString().split('T')[0];
+      const seteDias = new Date();
+      seteDias.setDate(seteDias.getDate() - 6);
+      const seteDiasStr = seteDias.toISOString().split('T')[0];
+      
+      // Fetch all metrics
+      const allMetrics = await fetchMetricasDiariasOferta({});
+      
+      // Agrupar por oferta_id
+      const metricsByOffer = new Map<string, typeof allMetrics>();
+      
+      allMetrics.forEach((m) => {
+        if (!m.oferta_id) return;
+        const existing = metricsByOffer.get(m.oferta_id) || [];
+        existing.push(m);
+        metricsByOffer.set(m.oferta_id, existing);
+      });
+      
+      // Calcular agregados para cada oferta
+      const aggregated = new Map<string, OfferAggregatedMetrics>();
+      
+      metricsByOffer.forEach((metricas, ofertaId) => {
+        // Total
+        const spendTotal = metricas.reduce((acc, m) => acc + (m.spend || 0), 0);
+        const faturadoTotal = metricas.reduce((acc, m) => acc + (m.faturado || 0), 0);
+        const roasTotal = spendTotal > 0 ? faturadoTotal / spendTotal : 0;
+        
+        // Hoje
+        const metricasHoje = metricas.filter((m) => m.data === hoje);
+        const spendToday = metricasHoje.reduce((acc, m) => acc + (m.spend || 0), 0);
+        const faturadoToday = metricasHoje.reduce((acc, m) => acc + (m.faturado || 0), 0);
+        const roasToday = spendToday > 0 ? faturadoToday / spendToday : 0;
+        
+        // 7 dias
+        const metricas7d = metricas.filter((m) => m.data >= seteDiasStr && m.data <= hoje);
+        const spend7d = metricas7d.reduce((acc, m) => acc + (m.spend || 0), 0);
+        const faturado7d = metricas7d.reduce((acc, m) => acc + (m.faturado || 0), 0);
+        const roas7d = spend7d > 0 ? faturado7d / spend7d : 0;
+        
+        aggregated.set(ofertaId, {
+          ofertaId,
+          spendTotal,
+          spendToday,
+          spend7d,
+          faturadoTotal,
+          faturadoToday,
+          faturado7d,
+          roasTotal,
+          roasToday,
+          roas7d,
+        });
+      });
+      
+      return aggregated;
+    },
+  });
+}
+
+// Hook para buscar contagem de criativos por oferta
+export function useCreativesCountByOffer() {
+  return useQuery({
+    queryKey: ['criativos', 'countByOffer'],
+    queryFn: async () => {
+      const criativos = await fetchCriativos();
+      
+      const countByOffer = new Map<string, { liberado: number; em_teste: number; nao_validado: number }>();
+      
+      criativos.forEach((c) => {
+        if (!c.oferta_id) return;
+        
+        const existing = countByOffer.get(c.oferta_id) || { liberado: 0, em_teste: 0, nao_validado: 0 };
+        
+        if (c.status === 'liberado') existing.liberado++;
+        else if (c.status === 'em_teste') existing.em_teste++;
+        else if (c.status === 'nao_validado') existing.nao_validado++;
+        
+        countByOffer.set(c.oferta_id, existing);
+      });
+      
+      return countByOffer;
     },
   });
 }

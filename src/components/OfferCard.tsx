@@ -4,9 +4,12 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { formatCurrency, formatRoas, getOfferHealth, getHealthColor } from "@/lib/metrics";
 import { parseThresholds, type Oferta } from "@/services/api";
+import type { OfferAggregatedMetrics } from "@/hooks/useSupabase";
 
 interface OfferCardProps {
   oferta: Oferta;
+  metrics?: OfferAggregatedMetrics;
+  creativesCount?: { liberado: number; em_teste: number; nao_validado: number };
 }
 
 // Convert thresholds to format expected by metrics utils
@@ -18,29 +21,29 @@ function convertThresholds(thresholds: ReturnType<typeof parseThresholds>) {
   };
 }
 
-export function OfferCard({ oferta }: OfferCardProps) {
+export function OfferCard({ oferta, metrics, creativesCount }: OfferCardProps) {
   const navigate = useNavigate();
   const thresholds = convertThresholds(parseThresholds(oferta.thresholds));
   
-  // Placeholder metrics - in a complete implementation, these would come from 
-  // aggregated metrics per offer (metricas_diarias_oferta view/query)
-  const metrics = {
-    spendTotal: 0,
-    spendToday: 0,
-    spend7d: 0,
-    roasTotal: 0,
-    roasToday: 0,
-    roas7d: 0,
+  // Use real metrics if available, otherwise show zeros
+  const displayMetrics = {
+    spendTotal: metrics?.spendTotal ?? 0,
+    spendToday: metrics?.spendToday ?? 0,
+    spend7d: metrics?.spend7d ?? 0,
+    roasTotal: metrics?.roasTotal ?? 0,
+    roasToday: metrics?.roasToday ?? 0,
+    roas7d: metrics?.roas7d ?? 0,
   };
   
-  // Placeholder creative counts - would come from a separate query
-  const creativesCount = {
-    liberado: 0,
-    em_teste: 0,
-    nao_validado: 0,
+  // Use real creative counts if available
+  const displayCreativesCount = {
+    liberado: creativesCount?.liberado ?? 0,
+    em_teste: creativesCount?.em_teste ?? 0,
+    nao_validado: creativesCount?.nao_validado ?? 0,
   };
   
-  const health = getOfferHealth(metrics.roasTotal, thresholds);
+  // Calculate health based on REAL ROAS total
+  const health = getOfferHealth(displayMetrics.roasTotal, thresholds);
 
   return (
     <Card
@@ -68,15 +71,15 @@ export function OfferCard({ oferta }: OfferCardProps) {
         <div className="space-y-3">
           <div className="space-y-0.5">
             <p className="text-xs text-muted-foreground">Spend Total</p>
-            <p className="text-xs font-semibold">{formatCurrency(metrics.spendTotal)}</p>
+            <p className="text-xs font-semibold">{formatCurrency(displayMetrics.spendTotal)}</p>
           </div>
           <div className="space-y-0.5">
             <p className="text-xs text-muted-foreground">Spend Hoje</p>
-            <p className="text-xs font-medium">{formatCurrency(metrics.spendToday)}</p>
+            <p className="text-xs font-medium">{formatCurrency(displayMetrics.spendToday)}</p>
           </div>
           <div className="space-y-0.5">
             <p className="text-xs text-muted-foreground">Spend 7d</p>
-            <p className="text-xs font-medium">{formatCurrency(metrics.spend7d)}</p>
+            <p className="text-xs font-medium">{formatCurrency(displayMetrics.spend7d)}</p>
           </div>
         </div>
 
@@ -92,16 +95,16 @@ export function OfferCard({ oferta }: OfferCardProps) {
                 health === "danger" && "text-danger",
               )}
             >
-              {formatRoas(metrics.roasTotal)}
+              {formatRoas(displayMetrics.roasTotal)}
             </p>
           </div>
           <div className="space-y-0.5">
             <p className="text-xs text-muted-foreground">ROAS Hoje</p>
-            <p className="text-sm font-medium">{formatRoas(metrics.roasToday)}</p>
+            <p className="text-sm font-medium">{formatRoas(displayMetrics.roasToday)}</p>
           </div>
           <div className="space-y-0.5">
             <p className="text-xs text-muted-foreground">ROAS 7d</p>
-            <p className="text-sm font-medium">{formatRoas(metrics.roas7d)}</p>
+            <p className="text-sm font-medium">{formatRoas(displayMetrics.roas7d)}</p>
           </div>
         </div>
       </div>
@@ -109,13 +112,13 @@ export function OfferCard({ oferta }: OfferCardProps) {
       {/* Footer - Creative Badges */}
       <div className="flex items-center gap-2 pt-3 border-t border-border flex-wrap">
         <Badge variant="secondary" className="text-xs">
-          {creativesCount.liberado} Liberados
+          {displayCreativesCount.liberado} Liberados
         </Badge>
         <Badge variant="outline" className="text-xs">
-          {creativesCount.em_teste} Em Teste
+          {displayCreativesCount.em_teste} Em Teste
         </Badge>
         <Badge variant="outline" className="text-xs text-muted-foreground">
-          {creativesCount.nao_validado} Não Validados
+          {displayCreativesCount.nao_validado} Não Validados
         </Badge>
       </div>
     </Card>
