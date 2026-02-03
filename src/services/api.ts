@@ -269,6 +269,47 @@ export async function fetchMetricasDiariasOferta(filters?: {
   return data;
 }
 
+// Type for metrics with joined offer data
+export interface MetricaDiariaOfertaComJoin extends MetricaDiariaOferta {
+  oferta: Oferta | null;
+}
+
+export async function fetchMetricasDiariasOfertaComJoin(filters?: {
+  dataInicio?: string;
+  dataFim?: string;
+  statusOferta?: string;
+}): Promise<MetricaDiariaOfertaComJoin[]> {
+  let query = supabase
+    .from('metricas_diarias_oferta')
+    .select(`
+      *,
+      oferta:ofertas(id, nome, nicho, pais, status, thresholds)
+    `)
+    .order('data', { ascending: false });
+  
+  if (filters?.dataInicio) {
+    query = query.gte('data', filters.dataInicio);
+  }
+  if (filters?.dataFim) {
+    query = query.lte('data', filters.dataFim);
+  }
+  
+  const { data, error } = await query;
+  if (error) throw error;
+  
+  // Filter by offer status if specified (can't do this in the query directly with join)
+  let result = (data || []) as MetricaDiariaOfertaComJoin[];
+  
+  if (filters?.statusOferta && filters.statusOferta !== 'all') {
+    result = result.filter(m => m.oferta?.status === filters.statusOferta);
+  } else {
+    // By default, exclude archived offers
+    result = result.filter(m => m.oferta?.status !== 'arquivado');
+  }
+  
+  return result;
+}
+
 // ==================== NICHOS ====================
 
 export async function fetchNichos() {

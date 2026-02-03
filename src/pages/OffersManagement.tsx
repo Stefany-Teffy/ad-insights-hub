@@ -63,30 +63,26 @@ import {
   usePaises,
   useCreateNicho,
   useCreatePais,
-  useMetricasOferta,
+  useMetricasDiariasComOferta,
 } from '@/hooks/useSupabase';
-import { parseThresholds, type Oferta } from '@/services/api';
+import { parseThresholds, type Oferta, type MetricaDiariaOfertaComJoin } from '@/services/api';
 
 type SortField = 'roas' | 'ic' | 'cpc' | 'profit' | 'mc' | 'revenue' | 'spend' | 'date' | null;
 type SortDirection = 'asc' | 'desc';
 
-// Tipo local para oferta com métricas calculadas
-interface OfertaComMetricas extends Oferta {
-  metricas?: {
-    roas: number;
-    ic: number;
-    cpc: number;
-    lucro: number;
-    mc: number;
-    faturado: number;
-    spend: number;
-  };
-}
+// Type alias for convenience
+type MetricaDiaComOferta = MetricaDiariaOfertaComJoin;
 
 export default function OffersManagement() {
   const navigate = useNavigate();
-  // Supabase hooks
-  const { data: ofertas, isLoading: isLoadingOfertas, refetch } = useOfertas();
+  const { periodo, setPeriodo } = usePeriodo('7d');
+  
+  // Supabase hooks - agora busca métricas diárias com JOIN na oferta
+  const { data: metricasDiarias, isLoading: isLoadingMetricas, refetch: refetchMetricas } = useMetricasDiariasComOferta({
+    dataInicio: periodo.dataInicio,
+    dataFim: periodo.dataFim,
+  });
+  const { data: ofertas, refetch: refetchOfertas } = useOfertas();
   const { data: nichos, isLoading: isLoadingNichos } = useNichos();
   const { data: paises, isLoading: isLoadingPaises } = usePaises();
   
@@ -101,13 +97,13 @@ export default function OffersManagement() {
   const [isEditSheetOpen, setIsEditSheetOpen] = useState(false);
   const [isConfirmDialogOpen, setIsConfirmDialogOpen] = useState(false);
   const [isThresholdsDialogOpen, setIsThresholdsDialogOpen] = useState(false);
-  const [viewingOffer, setViewingOffer] = useState<OfertaComMetricas | null>(null);
+  const [viewingOffer, setViewingOffer] = useState<Oferta | null>(null);
+  const [viewingMetrica, setViewingMetrica] = useState<MetricaDiaComOferta | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [nicheFilter, setNicheFilter] = useState<string>('all');
   const [countryFilter, setCountryFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [healthFilter, setHealthFilter] = useState<string>('all');
-  const { periodo, setPeriodo } = usePeriodo('7d');
   const [sortField, setSortField] = useState<SortField>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   
@@ -125,7 +121,7 @@ export default function OffersManagement() {
   const [cpcYellow, setCpcYellow] = useState('2.00');
   
   // Edit form state
-  const [editingOffer, setEditingOffer] = useState<OfertaComMetricas | null>(null);
+  const [editingOffer, setEditingOffer] = useState<Oferta | null>(null);
   const [editName, setEditName] = useState('');
   const [editNiche, setEditNiche] = useState('');
   const [editCountry, setEditCountry] = useState('');
@@ -141,21 +137,11 @@ export default function OffersManagement() {
   const nichosOptions = (nichos || []).map(n => ({ value: n.nome, label: n.nome }));
   const paisesOptions = (paises || []).map(p => ({ value: p.nome, label: p.nome }));
 
-  // Filter and enrich ofertas - only show active/paused (not archived)
-  const activeOfertas: OfertaComMetricas[] = (ofertas || [])
-    .filter(o => o.status === 'ativo' || o.status === 'pausado')
-    .map(oferta => ({
-      ...oferta,
-      metricas: {
-        roas: 0,
-        ic: 0,
-        cpc: 0,
-        lucro: 0,
-        mc: 0,
-        faturado: 0,
-        spend: 0,
-      }
-    }));
+  // Refresh function
+  const handleRefresh = () => {
+    refetchMetricas();
+    refetchOfertas();
+  };
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -166,15 +152,18 @@ export default function OffersManagement() {
     }
   };
 
-  const filteredOffers = activeOfertas.filter((offer) => {
-    const matchesSearch = offer.nome.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesNiche = nicheFilter === 'all' || offer.nicho === nicheFilter;
-    const matchesCountry = countryFilter === 'all' || offer.pais === countryFilter;
-    const matchesStatus = statusFilter === 'all' || offer.status === statusFilter;
+  // Filter metrics based on search and filters
+  const filteredMetricas = (metricasDiarias || []).filter((metrica) => {
+    if (!metrica.oferta) return false;
+    
+    const matchesSearch = metrica.oferta.nome.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesNiche = nicheFilter === 'all' || metrica.oferta.nicho === nicheFilter;
+    const matchesCountry = countryFilter === 'all' || metrica.oferta.pais === countryFilter;
+    const matchesStatus = statusFilter === 'all' || metrica.oferta.status === statusFilter;
     
     // For health filter, we need thresholds
-    const thresholds = parseThresholds(offer.thresholds);
-    const health = getMetricStatus(offer.metricas?.roas || 0, 'roas', {
+    const thresholds = parseThresholds(metrica.oferta.thresholds);
+    const health = getMetricStatus(metrica.roas || 0, 'roas', {
       roas: { green: thresholds.roas.verde, yellow: thresholds.roas.amarelo },
       ic: { green: thresholds.ic.verde, yellow: thresholds.ic.amarelo },
       cpc: { green: thresholds.cpc.verde, yellow: thresholds.cpc.amarelo },
@@ -184,39 +173,40 @@ export default function OffersManagement() {
     return matchesSearch && matchesNiche && matchesCountry && matchesStatus && matchesHealth;
   });
 
-  const sortedOffers = [...filteredOffers].sort((a, b) => {
+  // Sort metrics
+  const sortedMetricas = [...filteredMetricas].sort((a, b) => {
     if (!sortField) return 0;
     
     let aValue: number, bValue: number;
     
     switch (sortField) {
       case 'roas':
-        aValue = a.metricas?.roas || 0;
-        bValue = b.metricas?.roas || 0;
+        aValue = a.roas || 0;
+        bValue = b.roas || 0;
         break;
       case 'ic':
-        aValue = a.metricas?.ic || 0;
-        bValue = b.metricas?.ic || 0;
+        aValue = a.ic || 0;
+        bValue = b.ic || 0;
         break;
       case 'cpc':
-        aValue = a.metricas?.cpc || 0;
-        bValue = b.metricas?.cpc || 0;
+        aValue = a.cpc || 0;
+        bValue = b.cpc || 0;
         break;
       case 'profit':
-        aValue = a.metricas?.lucro || 0;
-        bValue = b.metricas?.lucro || 0;
+        aValue = a.lucro || 0;
+        bValue = b.lucro || 0;
         break;
       case 'mc':
-        aValue = a.metricas?.mc || 0;
-        bValue = b.metricas?.mc || 0;
+        aValue = a.mc || 0;
+        bValue = b.mc || 0;
         break;
       case 'revenue':
-        aValue = a.metricas?.faturado || 0;
-        bValue = b.metricas?.faturado || 0;
+        aValue = a.faturado || 0;
+        bValue = b.faturado || 0;
         break;
       case 'spend':
-        aValue = a.metricas?.spend || 0;
-        bValue = b.metricas?.spend || 0;
+        aValue = a.spend || 0;
+        bValue = b.spend || 0;
         break;
       case 'date':
         aValue = new Date(a.data).getTime();
@@ -292,7 +282,7 @@ export default function OffersManagement() {
     setEditCountry(nome);
   };
 
-  const openEditSheet = (offer: OfertaComMetricas) => {
+  const openEditSheet = (offer: Oferta) => {
     setEditingOffer(offer);
     setEditName(offer.nome);
     setEditNiche(offer.nicho);
@@ -307,8 +297,11 @@ export default function OffersManagement() {
     setIsEditSheetOpen(true);
   };
 
-  const openThresholdsDialog = (offer: OfertaComMetricas) => {
-    setViewingOffer(offer);
+  const openThresholdsDialog = (metrica: MetricaDiaComOferta) => {
+    if (metrica.oferta) {
+      setViewingOffer(metrica.oferta);
+      setViewingMetrica(metrica);
+    }
     setIsThresholdsDialogOpen(true);
   };
 
@@ -357,8 +350,8 @@ export default function OffersManagement() {
     </TableHead>
   );
 
-  const getOfferThresholds = (offer: OfertaComMetricas) => {
-    const t = parseThresholds(offer.thresholds);
+  const getOfferThresholds = (offer: Oferta | null) => {
+    const t = parseThresholds(offer?.thresholds);
     return {
       roas: { green: t.roas.verde, yellow: t.roas.amarelo },
       ic: { green: t.ic.verde, yellow: t.ic.amarelo },
@@ -388,10 +381,10 @@ export default function OffersManagement() {
             variant="outline" 
             size="sm" 
             className="gap-2"
-            onClick={() => refetch()}
-            disabled={isLoadingOfertas}
+            onClick={handleRefresh}
+            disabled={isLoadingMetricas}
           >
-            {isLoadingOfertas ? (
+            {isLoadingMetricas ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
               <RefreshCw className="h-4 w-4" />
@@ -692,7 +685,7 @@ export default function OffersManagement() {
       </Card>
 
       {/* Loading State */}
-      {isLoadingOfertas ? (
+      {isLoadingMetricas ? (
         <div className="flex items-center justify-center py-12">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
@@ -718,27 +711,32 @@ export default function OffersManagement() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {sortedOffers.length === 0 ? (
+              {sortedMetricas.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={13} className="text-center py-8 text-muted-foreground">
-                    Nenhuma oferta encontrada
+                    Nenhum resultado encontrado para o período selecionado
                   </TableCell>
                 </TableRow>
               ) : (
-                sortedOffers.map((offer) => {
-                  const thresholds = getOfferThresholds(offer);
-                  const metricas = offer.metricas || { roas: 0, ic: 0, cpc: 0, lucro: 0, mc: 0, faturado: 0, spend: 0 };
+                sortedMetricas.map((metrica) => {
+                  if (!metrica.oferta) return null;
+                  
+                  const thresholds = getOfferThresholds(metrica.oferta);
+                  const lucro = (metrica.faturado || 0) - (metrica.spend || 0);
+                  const mc = metrica.faturado && metrica.faturado > 0 
+                    ? (lucro / metrica.faturado) * 100 
+                    : 0;
 
                   return (
-                    <TableRow key={offer.id}>
-                      <TableCell>{new Date(offer.data).toLocaleDateString('pt-BR')}</TableCell>
-                      <TableCell className="font-medium">{offer.nome}</TableCell>
-                      <TableCell>{offer.nicho}</TableCell>
-                      <TableCell>{offer.pais}</TableCell>
-                      <TableCell><StatusBadge status={mapStatusToDisplay(offer.status || 'ativo')} /></TableCell>
+                    <TableRow key={metrica.id}>
+                      <TableCell>{new Date(metrica.data).toLocaleDateString('pt-BR')}</TableCell>
+                      <TableCell className="font-medium">{metrica.oferta.nome}</TableCell>
+                      <TableCell>{metrica.oferta.nicho}</TableCell>
+                      <TableCell>{metrica.oferta.pais}</TableCell>
+                      <TableCell><StatusBadge status={mapStatusToDisplay(metrica.oferta.status || 'ativo')} /></TableCell>
                       <TableCell className="text-right">
                         <MetricBadge
-                          value={metricas.roas}
+                          value={metrica.roas || 0}
                           metricType="roas"
                           thresholds={thresholds}
                           format={formatRoas}
@@ -746,7 +744,7 @@ export default function OffersManagement() {
                       </TableCell>
                       <TableCell className="text-right">
                         <MetricBadge
-                          value={metricas.ic}
+                          value={metrica.ic || 0}
                           metricType="ic"
                           thresholds={thresholds}
                           format={(v) => formatCurrency(v)}
@@ -754,25 +752,25 @@ export default function OffersManagement() {
                       </TableCell>
                       <TableCell className="text-right">
                         <MetricBadge
-                          value={metricas.cpc}
+                          value={metrica.cpc || 0}
                           metricType="cpc"
                           thresholds={thresholds}
                           format={(v) => formatCurrency(v)}
                         />
                       </TableCell>
-                      <TableCell className={`text-right font-medium ${metricas.lucro >= 0 ? 'text-success' : 'text-danger'}`}>
-                        {formatCurrency(metricas.lucro)}
+                      <TableCell className={`text-right font-medium ${lucro >= 0 ? 'text-success' : 'text-danger'}`}>
+                        {formatCurrency(lucro)}
                       </TableCell>
-                      <TableCell className="text-right">{metricas.mc.toFixed(1)}%</TableCell>
-                      <TableCell className="text-right">{formatCurrency(metricas.faturado)}</TableCell>
-                      <TableCell className="text-right">{formatCurrency(metricas.spend)}</TableCell>
+                      <TableCell className="text-right">{mc.toFixed(1)}%</TableCell>
+                      <TableCell className="text-right">{formatCurrency(metrica.faturado || 0)}</TableCell>
+                      <TableCell className="text-right">{formatCurrency(metrica.spend || 0)}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1">
                           <Button 
                             variant="ghost" 
                             size="icon" 
                             className="h-8 w-8"
-                            onClick={() => openThresholdsDialog(offer)}
+                            onClick={() => openThresholdsDialog(metrica)}
                             title="Ver métricas"
                           >
                             <Eye className="h-4 w-4" />
@@ -781,7 +779,7 @@ export default function OffersManagement() {
                             variant="ghost" 
                             size="icon" 
                             className="h-8 w-8"
-                            onClick={() => openEditSheet(offer)}
+                            onClick={() => metrica.oferta && openEditSheet(metrica.oferta)}
                             title="Editar oferta"
                           >
                             <Pencil className="h-4 w-4" />
@@ -803,9 +801,9 @@ export default function OffersManagement() {
         onOpenChange={setIsThresholdsDialogOpen}
         oferta={viewingOffer}
         metricas={{
-          roas: viewingOffer?.metricas?.roas || 0,
-          ic: viewingOffer?.metricas?.ic || 0,
-          cpc: viewingOffer?.metricas?.cpc || 0,
+          roas: viewingMetrica?.roas || 0,
+          ic: viewingMetrica?.ic || 0,
+          cpc: viewingMetrica?.cpc || 0,
         }}
       />
 

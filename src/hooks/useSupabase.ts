@@ -20,6 +20,7 @@ import {
   // Métricas
   fetchMetricasDiarias,
   fetchMetricasDiariasOferta,
+  fetchMetricasDiariasOfertaComJoin,
   createMetricaDiaria,
   upsertMetricaDiaria,
   getDateRange,
@@ -36,6 +37,7 @@ import {
   type CriativoInsert,
   type CriativoUpdate,
   type MetricaDiariaInsert,
+  type MetricaDiariaOfertaComJoin,
 } from '@/services/api';
 
 // ==================== QUERY KEYS ====================
@@ -59,6 +61,7 @@ export const queryKeys = {
   metricas: {
     byCriativo: (criativoId: string, periodo?: string) => ['metricas', 'criativo', criativoId, periodo] as const,
     byOferta: (ofertaId: string, periodo?: string) => ['metricas', 'oferta', ofertaId, periodo] as const,
+    diariasComOferta: (filters?: Record<string, string>) => ['metricas', 'diariasComOferta', filters] as const,
     aggregatedByOferta: (ofertaId: string) => ['metricas', 'aggregated', ofertaId] as const,
     allAggregated: () => ['metricas', 'allAggregated'] as const,
     totais: () => ['metricas', 'totais'] as const,
@@ -301,6 +304,18 @@ export function useMetricasOferta(ofertaId: string, periodo?: string) {
       dataFim: dateRange?.dataFim,
     }),
     enabled: !!ofertaId,
+  });
+}
+
+// Hook para buscar métricas diárias com dados da oferta (JOIN)
+export function useMetricasDiariasComOferta(filters?: {
+  dataInicio?: string;
+  dataFim?: string;
+  statusOferta?: string;
+}) {
+  return useQuery({
+    queryKey: queryKeys.metricas.diariasComOferta(filters as Record<string, string>),
+    queryFn: () => fetchMetricasDiariasOfertaComJoin(filters),
   });
 }
 
