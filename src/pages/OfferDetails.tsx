@@ -78,6 +78,7 @@ export default function OfferDetails() {
   const [searchQuery, setSearchQuery] = useState('');
   const [sortField, setSortField] = useState<SortField>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+  const [activeTab, setActiveTab] = useState('daily');
   
   // Dialog states
   const [isLancarMetricaOpen, setIsLancarMetricaOpen] = useState(false);
@@ -444,7 +445,7 @@ export default function OfferDetails() {
       </div>
 
       {/* Tabs */}
-      <Tabs defaultValue="daily" className="w-full">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="grid w-full grid-cols-4 max-w-2xl">
           <TabsTrigger value="daily">Resultado Diário</TabsTrigger>
           <TabsTrigger value="fb">

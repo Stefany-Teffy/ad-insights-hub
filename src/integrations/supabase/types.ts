@@ -313,6 +313,8 @@ export type Database = {
     Views: {
       criativos_com_medias: {
         Row: {
+          cpc_3d: number | null
+          cpc_7d: number | null
           cpc_hoje: number | null
           faturado_3d: number | null
           faturado_7d: number | null
