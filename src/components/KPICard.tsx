@@ -89,12 +89,15 @@ export function KPIDualCard({
   className,
 }: KPIDualCardProps) {
   return (
-    <Card className={cn('p-4 shadow-card min-w-0', className)}>
-      <div className="grid grid-cols-2 gap-2">
-        <div className="space-y-1 min-w-0 pr-2">
-          <p className="kpi-label truncate">{leftLabel}</p>
+    <Card className={cn('p-4 shadow-card', className)}>
+      <div className="flex flex-col sm:flex-row sm:items-start gap-3 sm:gap-0">
+        {/* Left section */}
+        <div className="flex-1 space-y-1">
+          <p className="text-xs font-medium text-muted-foreground whitespace-nowrap">
+            {leftLabel}
+          </p>
           <p
-            className={cn('text-lg lg:text-xl xl:text-2xl font-bold tracking-tight break-words leading-tight', {
+            className={cn('text-xl lg:text-2xl font-bold tracking-tight', {
               'text-success': leftVariant === 'success',
               'text-warning': leftVariant === 'warning',
               'text-danger': leftVariant === 'danger',
@@ -103,10 +106,18 @@ export function KPIDualCard({
             {leftValue}
           </p>
         </div>
-        <div className="space-y-1 border-l border-border pl-2 min-w-0">
-          <p className="kpi-label truncate">{rightLabel}</p>
+        
+        {/* Divider */}
+        <div className="hidden sm:block w-px bg-border mx-3 self-stretch" />
+        <div className="sm:hidden h-px bg-border w-full" />
+        
+        {/* Right section */}
+        <div className="flex-1 space-y-1">
+          <p className="text-xs font-medium text-muted-foreground whitespace-nowrap">
+            {rightLabel}
+          </p>
           <p
-            className={cn('text-lg lg:text-xl xl:text-2xl font-bold tracking-tight break-words leading-tight', {
+            className={cn('text-xl lg:text-2xl font-bold tracking-tight', {
               'text-success': rightVariant === 'success',
               'text-warning': rightVariant === 'warning',
               'text-danger': rightVariant === 'danger',
