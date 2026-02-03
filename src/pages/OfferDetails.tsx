@@ -203,15 +203,22 @@ export default function OfferDetails() {
     
     return (
       <div className="space-y-4">
-        {/* Header with button */}
-        <div className="flex items-center justify-between">
+        {/* Header with button and period filter */}
+        <div className="flex items-center justify-between flex-wrap gap-3">
           <h3 className="text-sm font-medium text-muted-foreground">
             Criativos {fonteLabel}
           </h3>
-          <Button className="gap-2" onClick={() => openLancarMetrica(fonte)}>
-            <Plus className="h-4 w-4" />
-            Lançar Métrica
-          </Button>
+          <div className="flex items-center gap-3">
+            <PeriodoFilter 
+              value={periodo} 
+              onChange={setPeriodo}
+              showAllOption
+            />
+            <Button className="gap-2" onClick={() => openLancarMetrica(fonte)}>
+              <Plus className="h-4 w-4" />
+              Lançar Métrica
+            </Button>
+          </div>
         </div>
 
         {/* Filters */}
