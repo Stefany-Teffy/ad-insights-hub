@@ -5,14 +5,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -27,17 +19,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { StatusBadge } from '@/components/MetricBadge';
+import { OfferCard } from '@/components/OfferCard';
 import { PeriodoFilter, usePeriodo } from '@/components/PeriodoFilter';
-import { formatDate } from '@/lib/format';
 import { toast } from 'sonner';
 import {
   useOfertasArquivadas,
   useUpdateOferta,
   useDeleteOferta,
+  useRestoreOferta,
   useNichos,
   usePaises,
+  useAllOffersAggregatedMetrics,
+  useCreativesCountByOffer,
 } from '@/hooks/useSupabase';
+import { countCriativosArquivadosComOferta } from '@/services/api';
 import type { Oferta } from '@/services/api';
 
 export default function ArchivedOffers() {
@@ -46,36 +41,45 @@ export default function ArchivedOffers() {
   const [nicheFilter, setNicheFilter] = useState<string>('all');
   const [countryFilter, setCountryFilter] = useState<string>('all');
   const { periodo, setPeriodo } = usePeriodo('all');
-  
+
   // Delete dialog state
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [selectedOffer, setSelectedOffer] = useState<Oferta | null>(null);
   const [deleteConfirmName, setDeleteConfirmName] = useState('');
 
+  // Restore dialog state
+  const [isRestoreDialogOpen, setIsRestoreDialogOpen] = useState(false);
+  const [offerToRestore, setOfferToRestore] = useState<Oferta | null>(null);
+  const [criativosCount, setCriativosCount] = useState<number>(0);
+  const [restoreCreatives, setRestoreCreatives] = useState<boolean>(true);
+
   // Hooks
   const { data: ofertas, isLoading, refetch } = useOfertasArquivadas();
   const { data: nichos } = useNichos();
   const { data: paises } = usePaises();
+  const { data: aggregatedMetrics } = useAllOffersAggregatedMetrics();
+  const { data: creativesCountByOffer } = useCreativesCountByOffer();
   const updateOferta = useUpdateOferta();
   const deleteOferta = useDeleteOferta();
+  const restoreOfertaMutation = useRestoreOferta();
 
   // Filter offers
   const filteredOffers = (ofertas || []).filter((offer) => {
     const matchesSearch = offer.nome.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesNiche = nicheFilter === 'all' || offer.nicho === nicheFilter;
     const matchesCountry = countryFilter === 'all' || offer.pais === countryFilter;
-    
-    // Period filter using periodo state
+
+    // Period filter using periodo state - filtra pela data de arquivamento
     if (periodo.tipo !== 'all') {
-      const createdAt = new Date(offer.created_at || '');
+      // Usa archived_at se disponível, senão usa updated_at como fallback
+      const archivedAt = new Date(offer.archived_at || offer.updated_at || '');
       const startDate = new Date(periodo.dataInicio);
       const endDate = new Date(periodo.dataFim);
       endDate.setHours(23, 59, 59, 999);
-      
-      if (createdAt < startDate || createdAt > endDate) return false;
+
+      if (archivedAt < startDate || archivedAt > endDate) return false;
     }
-    
-    
+
     return matchesSearch && matchesNiche && matchesCountry;
   });
 
@@ -85,29 +89,48 @@ export default function ArchivedOffers() {
     setIsDeleteDialogOpen(true);
   };
 
-  const handleRestore = async (offer: Oferta) => {
+  const handleRestoreClick = async (offer: Oferta) => {
+    setOfferToRestore(offer);
+    setRestoreCreatives(true);  // Default to restoring creatives
+    // Count how many creatives were archived with this offer
+    const count = await countCriativosArquivadosComOferta(offer.id);
+    setCriativosCount(count);
+    setIsRestoreDialogOpen(true);
+  };
+
+  const handleConfirmRestore = async () => {
+    if (!offerToRestore) return;
+
     try {
-      await updateOferta.mutateAsync({
-        id: offer.id,
-        updates: { status: 'pausado' }
+      await restoreOfertaMutation.mutateAsync({
+        id: offerToRestore.id,
+        restoreCreatives: restoreCreatives && criativosCount > 0
       });
-      toast.success(`"${offer.nome}" foi restaurada com status pausado.`);
+
+      if (restoreCreatives && criativosCount > 0) {
+        toast.success(`"${offerToRestore.nome}" foi restaurada com ${criativosCount} criativo(s).`);
+      } else {
+        toast.success(`"${offerToRestore.nome}" foi restaurada com status pausado.`);
+      }
+      setIsRestoreDialogOpen(false);
+      setOfferToRestore(null);
+      setCriativosCount(0);
     } catch (error) {
-      toast.error('Não foi possível restaurar a oferta.');
+      toast.error('Nao foi possivel restaurar a oferta.');
     }
   };
 
   const handleConfirmDelete = async () => {
     if (!selectedOffer || deleteConfirmName !== selectedOffer.nome) return;
-    
+
     try {
       await deleteOferta.mutateAsync(selectedOffer.id);
-      toast.success(`"${selectedOffer.nome}" foi excluída permanentemente.`);
+      toast.success(`"${selectedOffer.nome}" foi excluida permanentemente.`);
       setIsDeleteDialogOpen(false);
       setSelectedOffer(null);
       setDeleteConfirmName('');
     } catch (error) {
-      toast.error('Não foi possível excluir a oferta. Verifique se não há criativos vinculados.');
+      toast.error('Nao foi possivel excluir a oferta. Verifique se nao ha criativos vinculados.');
     }
   };
 
@@ -170,82 +193,126 @@ export default function ArchivedOffers() {
           </Select>
           <Select value={countryFilter} onValueChange={setCountryFilter}>
             <SelectTrigger className="w-[140px]">
-              <SelectValue placeholder="País" />
+              <SelectValue placeholder="Pais" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Todos Países</SelectItem>
+              <SelectItem value="all">Todos Paises</SelectItem>
               {(paises || []).map((pais) => (
                 <SelectItem key={pais.id} value={pais.nome}>{pais.nome}</SelectItem>
               ))}
             </SelectContent>
           </Select>
-          <PeriodoFilter 
-            value={periodo} 
+          <PeriodoFilter
+            value={periodo}
             onChange={setPeriodo}
             showAllOption
           />
         </div>
       </Card>
 
-      {/* Table */}
-      <Card className="p-0 overflow-hidden">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Data Criação</TableHead>
-              <TableHead>Nome</TableHead>
-              <TableHead>Nicho</TableHead>
-              <TableHead>País</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Ações</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filteredOffers.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-                  Nenhuma oferta arquivada encontrada.
-                </TableCell>
-              </TableRow>
-            ) : (
-              filteredOffers.map((offer) => (
-                <TableRow key={offer.id}>
-                  <TableCell>
-                    {offer.created_at ? formatDate(offer.created_at) : '-'}
-                  </TableCell>
-                  <TableCell className="font-medium">{offer.nome}</TableCell>
-                  <TableCell>{offer.nicho}</TableCell>
-                  <TableCell>{offer.pais}</TableCell>
-                  <TableCell><StatusBadge status="archived" /></TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        className="h-8 w-8"
-                        onClick={() => handleRestore(offer)}
-                        disabled={updateOferta.isPending}
-                        title="Restaurar oferta"
-                      >
-                        <RotateCcw className="h-4 w-4" />
-                      </Button>
-                      <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        className="h-8 w-8 text-destructive hover:text-destructive"
-                        onClick={() => handleDeleteClick(offer)}
-                        title="Excluir permanentemente"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </Card>
+      {/* Cards Grid */}
+      {filteredOffers.length === 0 ? (
+        <div className="text-center py-12 text-muted-foreground">
+          <p>Nenhuma oferta arquivada encontrada.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filteredOffers.map((offer) => (
+            <div key={offer.id} className="relative">
+              <OfferCard
+                oferta={offer}
+                metrics={aggregatedMetrics?.get(offer.id)}
+                creativesCount={creativesCountByOffer?.get(offer.id)}
+              />
+              {/* Action icons overlay */}
+              <div className="absolute top-2 right-2 flex gap-1">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 bg-background/80 hover:bg-background"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleRestoreClick(offer);
+                  }}
+                  title="Restaurar oferta"
+                >
+                  <RotateCcw className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 bg-background/80 hover:bg-background text-destructive hover:text-destructive"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDeleteClick(offer);
+                  }}
+                  title="Excluir permanentemente"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Restore Confirmation Dialog */}
+      <Dialog open={isRestoreDialogOpen} onOpenChange={setIsRestoreDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Restaurar Oferta</DialogTitle>
+            <DialogDescription>
+              Tem certeza que deseja restaurar "{offerToRestore?.nome}"?
+              A oferta sera restaurada com status "Pausado".
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* Option to restore creatives - only show if there are creatives to restore */}
+          {criativosCount > 0 && (
+            <div className="py-4">
+              <div className="p-4 rounded-lg bg-muted/50 border">
+                <div className="flex items-start gap-3">
+                  <input
+                    type="checkbox"
+                    id="restore-creatives"
+                    checked={restoreCreatives}
+                    onChange={(e) => setRestoreCreatives(e.target.checked)}
+                    className="mt-1 h-4 w-4 rounded border-gray-300"
+                  />
+                  <div>
+                    <label htmlFor="restore-creatives" className="text-sm font-medium cursor-pointer">
+                      Restaurar {criativosCount} criativo(s) arquivado(s) junto
+                    </label>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Apenas criativos que foram arquivados automaticamente com esta oferta serao restaurados.
+                      Criativos arquivados manualmente antes permanecerao arquivados.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsRestoreDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleConfirmRestore}
+              disabled={restoreOfertaMutation.isPending}
+            >
+              {restoreOfertaMutation.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Restaurando...
+                </>
+              ) : (
+                'Restaurar'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Delete Confirmation Dialog */}
       <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
@@ -253,13 +320,13 @@ export default function ArchivedOffers() {
           <DialogHeader>
             <DialogTitle className="text-destructive">Excluir Oferta Permanentemente</DialogTitle>
             <DialogDescription>
-              Esta ação não pode ser desfeita. Todos os dados da oferta serão perdidos permanentemente.
+              Esta acao nao pode ser desfeita. Todos os dados da oferta serao perdidos permanentemente.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="p-4 rounded-lg bg-destructive/10 border border-destructive/20">
               <p className="text-sm text-destructive font-medium mb-2">
-                Você está prestes a excluir: <strong>{selectedOffer?.nome}</strong>
+                Voce esta prestes a excluir: <strong>{selectedOffer?.nome}</strong>
               </p>
               <p className="text-xs text-destructive/80">
                 Para confirmar, digite exatamente o nome da oferta abaixo:
@@ -285,8 +352,8 @@ export default function ArchivedOffers() {
             <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>
               Cancelar
             </Button>
-            <Button 
-              variant="destructive" 
+            <Button
+              variant="destructive"
               onClick={handleConfirmDelete}
               disabled={!isDeleteEnabled || deleteOferta.isPending}
             >

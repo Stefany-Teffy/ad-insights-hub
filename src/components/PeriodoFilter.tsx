@@ -129,7 +129,7 @@ export function PeriodoFilter({
           <SelectValue placeholder="Período" />
         </SelectTrigger>
         <SelectContent>
-          {showAllOption && <SelectItem value="all">Todos</SelectItem>}
+          {showAllOption && <SelectItem value="all">Todos Períodos</SelectItem>}
           <SelectItem value="today">Hoje</SelectItem>
           <SelectItem value="7d">Últimos 7 dias</SelectItem>
           <SelectItem value="30d">Últimos 30 dias</SelectItem>

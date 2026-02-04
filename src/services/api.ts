@@ -83,11 +83,80 @@ export async function deleteOferta(id: string) {
 }
 
 export async function archiveOferta(id: string) {
-  return updateOferta(id, { status: 'arquivado' });
+  const archivedTimestamp = new Date().toISOString();
+
+  // 1. Arquivar todos os criativos vinculados a esta oferta (que não estão já arquivados)
+  const { error: criativosError } = await supabase
+    .from('criativos')
+    .update({
+      status: 'arquivado',
+      archived_at: archivedTimestamp  // Mesma timestamp da oferta para identificar arquivamento conjunto
+    })
+    .eq('oferta_id', id)
+    .neq('status', 'arquivado');  // Não sobrescreve criativos já arquivados manualmente
+
+  if (criativosError) {
+    console.error('Erro ao arquivar criativos:', criativosError);
+    throw criativosError;
+  }
+
+  // 2. Arquivar a oferta e registrar a data de arquivamento
+  return updateOferta(id, {
+    status: 'arquivado',
+    archived_at: archivedTimestamp
+  });
 }
 
-export async function restoreOferta(id: string) {
-  return updateOferta(id, { status: 'ativo' });
+export async function restoreOferta(id: string, restoreCreatives: boolean = false) {
+  // Se solicitado, restaurar criativos que foram arquivados junto com a oferta
+  if (restoreCreatives) {
+    // Primeiro, buscar a oferta para pegar o archived_at
+    const oferta = await fetchOfertaById(id);
+
+    if (oferta?.archived_at) {
+      // Restaurar apenas criativos que têm o mesmo archived_at da oferta
+      // (ou seja, foram arquivados automaticamente junto com ela)
+      const { error: criativosError } = await supabase
+        .from('criativos')
+        .update({
+          status: 'em_teste',
+          archived_at: null
+        })
+        .eq('oferta_id', id)
+        .eq('archived_at', oferta.archived_at);
+
+      if (criativosError) {
+        console.error('Erro ao restaurar criativos:', criativosError);
+        throw criativosError;
+      }
+    }
+  }
+
+  // Restaurar a oferta
+  return updateOferta(id, {
+    status: 'pausado',
+    archived_at: null
+  });
+}
+
+// Conta quantos criativos foram arquivados junto com a oferta
+export async function countCriativosArquivadosComOferta(ofertaId: string): Promise<number> {
+  const oferta = await fetchOfertaById(ofertaId);
+
+  if (!oferta?.archived_at) return 0;
+
+  const { count, error } = await supabase
+    .from('criativos')
+    .select('*', { count: 'exact', head: true })
+    .eq('oferta_id', ofertaId)
+    .eq('archived_at', oferta.archived_at);
+
+  if (error) {
+    console.error('Erro ao contar criativos:', error);
+    return 0;
+  }
+
+  return count || 0;
 }
 
 // ==================== CRIATIVOS ====================
@@ -180,11 +249,17 @@ export async function deleteCriativo(id: string) {
 }
 
 export async function archiveCriativo(id: string) {
-  return updateCriativo(id, { status: 'arquivado' });
+  return updateCriativo(id, {
+    status: 'arquivado',
+    archived_at: new Date().toISOString()
+  });
 }
 
 export async function restoreCriativo(id: string) {
-  return updateCriativo(id, { status: 'em_teste' });
+  return updateCriativo(id, {
+    status: 'em_teste',
+    archived_at: null
+  });
 }
 
 // ==================== MÉTRICAS DIÁRIAS ====================

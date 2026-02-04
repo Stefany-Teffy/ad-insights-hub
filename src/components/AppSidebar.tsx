@@ -19,6 +19,9 @@ export function AppSidebar() {
   const location = useLocation();
   const { collapsed, setCollapsed } = useSidebarContext();
 
+  // Get the referrer path from navigation state for offer details pages
+  const fromPath = (location.state as { from?: string })?.from;
+
   return (
     <aside
       className={cn(
@@ -47,9 +50,22 @@ export function AppSidebar() {
         {/* Navigation */}
         <nav className="flex-1 space-y-1 p-3">
           {navigation.map((item) => {
-            const isActive = location.pathname === item.href || 
-              (item.href !== '/' && location.pathname.startsWith(item.href) && !location.pathname.includes('arquivad'));
-            
+            // Check if we're on an offer details page (/ofertas/:id)
+            const isOfferDetailsPage = location.pathname.match(/^\/ofertas\/[^/]+$/);
+
+            let isActive = false;
+            if (isOfferDetailsPage && fromPath) {
+              // On offer details page with referrer - highlight based on where user came from
+              isActive = item.href === fromPath;
+            } else if (isOfferDetailsPage) {
+              // On offer details page without referrer - highlight "Minhas Ofertas"
+              isActive = item.href === '/ofertas';
+            } else {
+              // Normal page - exact match or prefix match (excluding archive pages)
+              isActive = location.pathname === item.href ||
+                (item.href !== '/' && location.pathname.startsWith(item.href) && !location.pathname.includes('arquivad'));
+            }
+
             return (
               <NavLink
                 key={item.name}
@@ -77,8 +93,17 @@ export function AppSidebar() {
             </div>
           )}
           {archiveNavigation.map((item) => {
-            const isActive = location.pathname === item.href;
-            
+            // Check if we're on an offer details page (/ofertas/:id)
+            const isOfferDetailsPage = location.pathname.match(/^\/ofertas\/[^/]+$/);
+
+            let isActive = false;
+            if (isOfferDetailsPage && fromPath) {
+              // On offer details page with referrer - highlight based on where user came from
+              isActive = item.href === fromPath;
+            } else {
+              isActive = location.pathname === item.href;
+            }
+
             return (
               <NavLink
                 key={item.name}

@@ -1,4 +1,4 @@
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -9,7 +9,7 @@ import type { OfferAggregatedMetrics } from "@/hooks/useSupabase";
 interface OfferCardProps {
   oferta: Oferta;
   metrics?: OfferAggregatedMetrics;
-  creativesCount?: { liberado: number; em_teste: number; nao_validado: number };
+  creativesCount?: { liberado: number; em_teste: number; nao_validado: number; arquivado?: number };
 }
 
 // Convert thresholds to format expected by metrics utils
@@ -23,6 +23,7 @@ function convertThresholds(thresholds: ReturnType<typeof parseThresholds>) {
 
 export function OfferCard({ oferta, metrics, creativesCount }: OfferCardProps) {
   const navigate = useNavigate();
+  const location = useLocation();
   const thresholds = convertThresholds(parseThresholds(oferta.thresholds));
   
   // Use real metrics if available, otherwise show zeros
@@ -47,7 +48,7 @@ export function OfferCard({ oferta, metrics, creativesCount }: OfferCardProps) {
 
   return (
     <Card
-      onClick={() => navigate(`/ofertas/${oferta.id}`)}
+      onClick={() => navigate(`/ofertas/${oferta.id}`, { state: { from: location.pathname } })}
       className="cursor-pointer p-4 shadow-card transition-all duration-200 hover:shadow-card-hover hover:border-primary/20 active:scale-[0.99]"
     >
       {/* Header */}
@@ -111,15 +112,23 @@ export function OfferCard({ oferta, metrics, creativesCount }: OfferCardProps) {
 
       {/* Footer - Creative Badges */}
       <div className="flex items-center gap-2 pt-3 border-t border-border flex-wrap">
-        <Badge variant="secondary" className="text-xs">
-          {displayCreativesCount.liberado} Liberados
-        </Badge>
-        <Badge variant="outline" className="text-xs">
-          {displayCreativesCount.em_teste} Em Teste
-        </Badge>
-        <Badge variant="outline" className="text-xs text-muted-foreground">
-          {displayCreativesCount.nao_validado} Não Validados
-        </Badge>
+        {oferta.status === 'arquivado' ? (
+          <Badge variant="outline" className="text-xs text-muted-foreground">
+            {creativesCount?.arquivado ?? 0} Arquivados
+          </Badge>
+        ) : (
+          <>
+            <Badge variant="secondary" className="text-xs">
+              {displayCreativesCount.liberado} Liberados
+            </Badge>
+            <Badge variant="outline" className="text-xs whitespace-nowrap">
+              {displayCreativesCount.em_teste} Em Teste
+            </Badge>
+            <Badge variant="outline" className="text-xs text-muted-foreground whitespace-nowrap">
+              {displayCreativesCount.nao_validado} Não Validados
+            </Badge>
+          </>
+        )}
       </div>
     </Card>
   );

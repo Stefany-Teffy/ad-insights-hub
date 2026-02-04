@@ -233,9 +233,9 @@ export function LancarMetricaDialog({
                           {FONTE_LABELS[criativo.fonte] || criativo.fonte} • {criativo.copy_responsavel}
                         </span>
                       </div>
-                      <Badge 
+                      <Badge
                         variant="outline"
-                        className={cn(STATUS_COLORS[criativo.status || "em_teste"])}
+                        className={cn("whitespace-nowrap", STATUS_COLORS[criativo.status || "em_teste"])}
                       >
                         {STATUS_LABELS[criativo.status || "em_teste"]}
                       </Badge>
@@ -268,9 +268,9 @@ export function LancarMetricaDialog({
                 </div>
                 <div>
                   <Label className="text-xs text-muted-foreground">Status</Label>
-                  <Badge 
+                  <Badge
                     variant="outline"
-                    className={cn("mt-1", STATUS_COLORS[selectedCriativo.status || "em_teste"])}
+                    className={cn("mt-1 whitespace-nowrap", STATUS_COLORS[selectedCriativo.status || "em_teste"])}
                   >
                     {STATUS_LABELS[selectedCriativo.status || "em_teste"]}
                   </Badge>
@@ -296,7 +296,7 @@ export function LancarMetricaDialog({
           <div className="space-y-4">
             {/* Summary */}
             <div className="p-3 bg-muted/50 rounded-lg flex items-center gap-3">
-              <Badge variant="outline" className={STATUS_COLORS[selectedCriativo.status || "em_teste"]}>
+              <Badge variant="outline" className={cn("whitespace-nowrap", STATUS_COLORS[selectedCriativo.status || "em_teste"])}>
                 {FONTE_LABELS[selectedCriativo.fonte] || selectedCriativo.fonte}
               </Badge>
               <span className="font-medium">{selectedCriativo.id_unico}</span>

@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { ArrowLeft, Search, ArrowUpDown, Copy, RefreshCw, Loader2, Plus, Settings } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -70,6 +70,10 @@ function convertThresholds(thresholds: Thresholds) {
 export default function OfferDetails() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // Get the referrer path from navigation state, default to /ofertas
+  const fromPath = (location.state as { from?: string })?.from || '/ofertas';
   
   // Filter states
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -110,7 +114,7 @@ export default function OfferDetails() {
   const getCreativeMetrics = (criativoId: string) => {
     const metrics = criativosComMedias?.find(m => m.id === criativoId);
     if (!metrics) return { spend: 0, roas: 0, ic: 0, cpc: 0 };
-    
+
     // Select metrics based on period
     if (periodo.tipo === 'today') {
       return {
@@ -119,20 +123,27 @@ export default function OfferDetails() {
         ic: metrics.ic_hoje || 0,
         cpc: metrics.cpc_hoje || 0,
       };
+    } else if (periodo.tipo === '3d') {
+      return {
+        spend: metrics.spend_3d || 0,
+        roas: metrics.roas_3d || 0,
+        ic: metrics.ic_3d || 0,
+        cpc: metrics.cpc_3d || 0,
+      };
     } else if (periodo.tipo === '7d') {
       return {
         spend: metrics.spend_7d || 0,
         roas: metrics.roas_7d || 0,
         ic: metrics.ic_7d || 0,
-        cpc: 0, // View doesn't have cpc_7d
+        cpc: metrics.cpc_7d || 0,
       };
     } else {
-      // Default to 7d metrics for other periods (30d, custom, all)
+      // Para 30d, custom e all, usar 7d como fallback
       return {
         spend: metrics.spend_7d || 0,
         roas: metrics.roas_7d || 0,
         ic: metrics.ic_7d || 0,
-        cpc: 0,
+        cpc: metrics.cpc_7d || 0,
       };
     }
   };
@@ -191,12 +202,16 @@ export default function OfferDetails() {
 
   const filterAndSortCreatives = (criativos: Criativo[] | undefined) => {
     if (!criativos) return [];
-    
+
+    // Se a oferta estiver arquivada, mostrar criativos arquivados também
+    const isOfertaArquivada = oferta?.status === 'arquivado';
+
     let filtered = criativos.filter((c) => {
       const matchesStatus = statusFilter === 'all' || c.status === statusFilter;
       const matchesSearch = c.id_unico.toLowerCase().includes(searchQuery.toLowerCase());
       const matchesCopy = copyFilter === 'all' || c.copy_responsavel === copyFilter;
-      const notArchived = c.status !== 'arquivado';
+      // Se a oferta estiver arquivada, mostrar criativos arquivados; senão, filtrar
+      const notArchived = isOfertaArquivada || c.status !== 'arquivado';
       return matchesStatus && matchesSearch && matchesCopy && notArchived;
     });
 
@@ -237,22 +252,15 @@ export default function OfferDetails() {
     
     return (
       <div className="space-y-4">
-        {/* Header with button and period filter */}
+        {/* Header with title and button */}
         <div className="flex items-center justify-between flex-wrap gap-3">
           <h3 className="text-sm font-medium text-muted-foreground">
             Criativos {fonteLabel}
           </h3>
-          <div className="flex items-center gap-3">
-            <PeriodoFilter 
-              value={periodo} 
-              onChange={setPeriodo}
-              showAllOption
-            />
-            <Button className="gap-2" onClick={() => openLancarMetrica(fonte)}>
-              <Plus className="h-4 w-4" />
-              Lançar Métrica
-            </Button>
-          </div>
+          <Button className="gap-2" onClick={() => openLancarMetrica(fonte)}>
+            <Plus className="h-4 w-4" />
+            Lançar Métrica
+          </Button>
         </div>
 
         {/* Filters */}
@@ -266,18 +274,21 @@ export default function OfferDetails() {
               className="pl-9"
             />
           </div>
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-[150px]">
-              <SelectValue placeholder="Status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos os Status</SelectItem>
-              <SelectItem value="liberado">Liberado</SelectItem>
-              <SelectItem value="em_teste">Em Teste</SelectItem>
-              <SelectItem value="pausado">Pausado</SelectItem>
-              <SelectItem value="nao_validado">Não Validado</SelectItem>
-            </SelectContent>
-          </Select>
+          {/* Esconde filtro de status quando oferta está arquivada (todos criativos são arquivados) */}
+          {oferta?.status !== 'arquivado' && (
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-[150px]">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos os Status</SelectItem>
+                <SelectItem value="liberado">Liberado</SelectItem>
+                <SelectItem value="em_teste">Em Teste</SelectItem>
+                <SelectItem value="pausado">Pausado</SelectItem>
+                <SelectItem value="nao_validado">Não Validado</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
           <Select value={copyFilter} onValueChange={setCopyFilter}>
             <SelectTrigger className="w-[180px]">
               <SelectValue placeholder="Copywriter" />
@@ -289,6 +300,11 @@ export default function OfferDetails() {
               ))}
             </SelectContent>
           </Select>
+          <PeriodoFilter
+            value={periodo}
+            onChange={setPeriodo}
+            showAllOption
+          />
         </div>
 
         {/* Table */}
@@ -339,9 +355,9 @@ export default function OfferDetails() {
                           </div>
                         </TableCell>
                         <TableCell>
-                          <Badge 
+                          <Badge
                             variant="outline"
-                            className={cn(STATUS_COLORS[criativo.status || "em_teste"])}
+                            className={cn("whitespace-nowrap", STATUS_COLORS[criativo.status || "em_teste"])}
                           >
                             {STATUS_LABELS[criativo.status || "em_teste"]}
                           </Badge>
@@ -404,7 +420,7 @@ export default function OfferDetails() {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" onClick={() => navigate('/ofertas')}>
+        <Button variant="ghost" size="icon" onClick={() => navigate(fromPath)}>
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <div className="flex-1">
@@ -449,13 +465,19 @@ export default function OfferDetails() {
         <TabsList className="grid w-full grid-cols-4 max-w-2xl">
           <TabsTrigger value="daily">Resultado Diário</TabsTrigger>
           <TabsTrigger value="fb">
-            Criativos FB ({criativosFB?.filter(c => c.status !== 'arquivado').length || 0})
+            Criativos FB ({oferta?.status === 'arquivado'
+              ? criativosFB?.length || 0
+              : criativosFB?.filter(c => c.status !== 'arquivado').length || 0})
           </TabsTrigger>
           <TabsTrigger value="yt">
-            Criativos YT ({criativosYT?.filter(c => c.status !== 'arquivado').length || 0})
+            Criativos YT ({oferta?.status === 'arquivado'
+              ? criativosYT?.length || 0
+              : criativosYT?.filter(c => c.status !== 'arquivado').length || 0})
           </TabsTrigger>
           <TabsTrigger value="tt">
-            Criativos TT ({criativosTT?.filter(c => c.status !== 'arquivado').length || 0})
+            Criativos TT ({oferta?.status === 'arquivado'
+              ? criativosTT?.length || 0
+              : criativosTT?.filter(c => c.status !== 'arquivado').length || 0})
           </TabsTrigger>
         </TabsList>
 
@@ -481,7 +503,7 @@ export default function OfferDetails() {
                     <TableRow>
                       <TableHead>Dia</TableHead>
                       <TableHead className="text-right">Faturamento</TableHead>
-                      <TableHead className="text-right">Gastos</TableHead>
+                      <TableHead className="text-right">Spend</TableHead>
                       <TableHead className="text-right">ROAS</TableHead>
                       <TableHead className="text-right">IC</TableHead>
                       <TableHead className="text-right">CPC</TableHead>

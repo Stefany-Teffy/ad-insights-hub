@@ -1,0 +1,454 @@
+================================================================================
+DOCUMENTACAO DE ALTERACOES - TrackFlow
+Data: 2026-02-04
+================================================================================
+
+RESUMO DAS CORRECOES IMPLEMENTADAS:
+1. Troca de moeda de Real (BRL) para Euro (EUR)
+2. Correcao da navegacao e destaque do menu lateral
+
+================================================================================
+ARQUIVOS ALTERADOS:
+================================================================================
+
+1. src/lib/format.ts
+   -------------------
+   ALTERACAO: Mudanca da moeda de BRL para EUR
+
+   ANTES:
+   - Locale: 'pt-BR'
+   - Currency: 'BRL' (Real Brasileiro)
+
+   DEPOIS:
+   - Locale: 'de-DE'
+   - Currency: 'EUR' (Euro)
+
+   LINHAS AFETADAS: 6-14
+
+--------------------------------------------------------------------------------
+
+2. src/components/OfferCard.tsx
+   -----------------------------
+   ALTERACAO: Passar estado de origem na navegacao
+
+   MODIFICACOES:
+   - Adicionado import de useLocation
+   - Adicionado hook useLocation para capturar o path atual
+   - Modificado navigate() para passar state com 'from' (caminho de origem)
+
+   ANTES:
+   onClick={() => navigate(`/ofertas/${oferta.id}`)}
+
+   DEPOIS:
+   onClick={() => navigate(`/ofertas/${oferta.id}`, { state: { from: location.pathname } })}
+
+   LINHAS AFETADAS: 1, 25, 50
+
+--------------------------------------------------------------------------------
+
+3. src/pages/OfferDetails.tsx
+   ---------------------------
+   ALTERACAO: Ler estado de origem e usar para botao voltar
+
+   MODIFICACOES:
+   - Adicionado import de useLocation
+   - Adicionado hook useLocation
+   - Criada variavel fromPath para ler o state.from
+   - Modificado botao voltar para usar fromPath ao inves de '/ofertas' fixo
+
+   ANTES:
+   onClick={() => navigate('/ofertas')}
+
+   DEPOIS:
+   onClick={() => navigate(fromPath)}
+
+   COMPORTAMENTO:
+   - Se veio do Dashboard (/): volta para /
+   - Se veio de Ofertas Arquivadas (/ofertas-arquivadas): volta para /ofertas-arquivadas
+   - Se veio de Gestao de Ofertas (/ofertas): volta para /ofertas
+   - Default (sem estado): volta para /ofertas
+
+   LINHAS AFETADAS: 2, 70-74, 419
+
+--------------------------------------------------------------------------------
+
+4. src/components/AppSidebar.tsx
+   ------------------------------
+   ALTERACAO: Corrigir destaque do menu lateral baseado na origem
+
+   MODIFICACOES:
+   - Adicionada leitura do state.from da navegacao
+   - Modificada logica de isActive para considerar pagina de detalhes de oferta
+   - Quando em /ofertas/:id, destaca o item baseado em DE ONDE o usuario veio
+
+   LOGICA IMPLEMENTADA:
+   - Se esta em /ofertas/:id E tem state.from:
+     -> Destaca o item de menu correspondente ao fromPath
+   - Se esta em /ofertas/:id SEM state.from:
+     -> Destaca "Minhas Ofertas" (comportamento padrao)
+   - Caso contrario:
+     -> Comportamento normal de match exato ou prefixo
+
+   LINHAS AFETADAS: 18-20, 49-64, 93-102
+
+--------------------------------------------------------------------------------
+
+5. src/integrations/supabase/types.ts
+   ------------------------------------
+   ALTERACAO: Adicionar campo archived_at ao tipo Oferta
+
+   MODIFICACOES:
+   - Adicionado campo 'archived_at: string | null' em Row, Insert e Update
+   - Campo armazena a data/hora em que a oferta foi arquivada
+
+   LINHAS AFETADAS: 257, 268, 279
+
+--------------------------------------------------------------------------------
+
+6. src/services/api.ts
+   ---------------------
+   ALTERACAO: Preencher archived_at ao arquivar e limpar ao restaurar
+
+   FUNCAO archiveOferta():
+   ANTES:
+   return updateOferta(id, { status: 'arquivado' });
+
+   DEPOIS:
+   return updateOferta(id, {
+     status: 'arquivado',
+     archived_at: new Date().toISOString()
+   });
+
+   FUNCAO restoreOferta():
+   ANTES:
+   return updateOferta(id, { status: 'ativo' });
+
+   DEPOIS:
+   return updateOferta(id, {
+     status: 'pausado',
+     archived_at: null  // Limpa a data de arquivamento
+   });
+
+   LINHAS AFETADAS: 85-102
+
+--------------------------------------------------------------------------------
+
+7. src/pages/ArchivedOffers.tsx
+   -----------------------------
+   ALTERACAO: Filtro de periodo agora usa data de arquivamento
+
+   ANTES:
+   const createdAt = new Date(offer.created_at || '');
+
+   DEPOIS:
+   const archivedAt = new Date(offer.archived_at || offer.updated_at || '');
+
+   COMPORTAMENTO:
+   - Usa 'archived_at' se disponivel (ofertas arquivadas apos esta atualizacao)
+   - Usa 'updated_at' como fallback (ofertas arquivadas anteriormente)
+   - Filtra ofertas pela data em que foram ARQUIVADAS, nao criadas
+
+   LINHAS AFETADAS: 67-75
+
+================================================================================
+ALTERACAO NO BANCO DE DADOS (Supabase):
+================================================================================
+
+Comando SQL executado no Supabase SQL Editor:
+
+  ALTER TABLE ofertas ADD COLUMN archived_at TIMESTAMP WITH TIME ZONE DEFAULT NULL;
+
+- Adiciona coluna 'archived_at' na tabela 'ofertas'
+- Tipo: TIMESTAMP WITH TIME ZONE (data/hora com fuso horario)
+- Valor padrao: NULL (nulo)
+- NAO apaga dados existentes
+
+================================================================================
+COMPORTAMENTO APOS AS CORRECOES:
+================================================================================
+
+CENARIO 1: Usuario no Dashboard clica em card de oferta
+- Navega para /ofertas/:id com state { from: '/' }
+- Menu lateral destaca "Painel"
+- Botao voltar leva de volta para / (Dashboard)
+
+CENARIO 2: Usuario em Ofertas Arquivadas clica em card
+- Navega para /ofertas/:id com state { from: '/ofertas-arquivadas' }
+- Menu lateral destaca "Ofertas Arquivadas"
+- Botao voltar leva de volta para /ofertas-arquivadas
+
+CENARIO 3: Usuario em Gestao de Ofertas clica em card
+- Navega para /ofertas/:id com state { from: '/ofertas' }
+- Menu lateral destaca "Minhas Ofertas"
+- Botao voltar leva de volta para /ofertas
+
+CENARIO 4: Moeda
+- Todos os valores monetarios agora exibidos em Euro (EUR)
+- Formato: 1.234,56 EUR (padrao alemao)
+
+CENARIO 5: Filtro de Periodo em Ofertas Arquivadas
+- Agora filtra pela DATA DE ARQUIVAMENTO (archived_at)
+- Selecionar "7 dias" mostra ofertas arquivadas nos ultimos 7 dias
+- Ofertas arquivadas antes desta atualizacao usam updated_at como fallback
+
+CENARIO 6: Arquivar e Restaurar Ofertas
+- Ao ARQUIVAR: campo archived_at e preenchido com data/hora atual
+- Ao RESTAURAR: campo archived_at e limpo (null) e status vai para "pausado"
+
+================================================================================
+ALTERACOES ADICIONAIS - 2026-02-04 (Segunda Sessao)
+================================================================================
+
+RESUMO:
+1. Asteriscos vermelhos nos campos obrigatorios de Cadastro de Criativos
+2. Limpeza de codigo morto (editStartDate)
+3. Sistema de restauracao de criativos junto com oferta
+
+--------------------------------------------------------------------------------
+
+8. src/pages/CreativesManagement.tsx
+   ----------------------------------
+   ALTERACOES:
+
+   a) Asteriscos vermelhos nos campos obrigatorios:
+      - Oferta: adicionado <span className="text-destructive">*</span>
+      - ID Unico: adicionado <span className="text-destructive">*</span>
+      - Fonte: adicionado <span className="text-destructive">*</span>
+      - Copywriter: adicionado <span className="text-destructive">*</span>
+
+   b) Limpeza de codigo morto:
+      - Removido: const [editStartDate, setEditStartDate]
+      - Removido: startDate de editFieldsEnabled
+      - Removido: setEditStartDate(creative.created_at...)
+
+--------------------------------------------------------------------------------
+
+9. src/integrations/supabase/types.ts
+   ------------------------------------
+   ALTERACAO: Adicionar campo archived_at ao tipo Criativo
+
+   - Adicionado 'archived_at: string | null' em Row, Insert e Update de criativos
+
+--------------------------------------------------------------------------------
+
+10. src/services/api.ts
+    ---------------------
+    ALTERACOES:
+
+    a) archiveOferta():
+       - Agora usa mesma timestamp para oferta E criativos
+       - Apenas arquiva criativos que NAO estao ja arquivados
+
+    b) archiveCriativo():
+       - Agora preenche archived_at ao arquivar
+
+    c) restoreCriativo():
+       - Agora limpa archived_at ao restaurar
+
+    d) restoreOferta():
+       - Novo parametro: restoreCreatives (boolean)
+       - Se true, restaura criativos com mesmo archived_at da oferta
+       - Criativos arquivados manualmente NAO sao restaurados
+
+    e) Nova funcao: countCriativosArquivadosComOferta()
+       - Conta quantos criativos foram arquivados junto com a oferta
+       - Usado para mostrar opcao no dialog de restauracao
+
+--------------------------------------------------------------------------------
+
+11. src/hooks/useSupabase.ts
+    -------------------------
+    ALTERACOES:
+
+    a) useRestoreOferta():
+       - Agora aceita { id, restoreCreatives } ao inves de apenas id
+       - Invalida queries de criativos alem de ofertas
+
+    b) Nova funcao: useCountCriativosArquivadosComOferta()
+       - Hook para contar criativos arquivados com oferta
+
+--------------------------------------------------------------------------------
+
+12. src/pages/ArchivedOffers.tsx
+    -----------------------------
+    ALTERACOES:
+
+    - Novo state: criativosCount, restoreCreatives
+    - Import: countCriativosArquivadosComOferta, useRestoreOferta
+    - handleRestoreClick: agora conta criativos antes de abrir dialog
+    - handleConfirmRestore: usa restoreOfertaMutation com opcao
+    - Dialog: checkbox para escolher se restaura criativos
+
+================================================================================
+ALTERACAO NO BANCO DE DADOS (Supabase) - Segunda Sessao:
+================================================================================
+
+Comando SQL para adicionar archived_at em criativos:
+
+  ALTER TABLE criativos ADD COLUMN archived_at TIMESTAMP WITH TIME ZONE DEFAULT NULL;
+
+================================================================================
+COMPORTAMENTO DO SISTEMA DE RESTAURACAO:
+================================================================================
+
+CENARIO 7: Restaurar oferta COM criativos
+- Usuario clica em restaurar oferta arquivada
+- Sistema conta quantos criativos foram arquivados JUNTO com a oferta
+- Dialog mostra checkbox: "Restaurar X criativo(s) arquivado(s) junto"
+- Se marcado: restaura oferta + criativos com mesmo archived_at
+- Criativos arquivados ANTES da oferta NAO sao restaurados
+
+CENARIO 8: Restaurar oferta SEM criativos
+- Usuario desmarca checkbox ou nao ha criativos para restaurar
+- Apenas a oferta e restaurada
+- Criativos permanecem arquivados
+
+LOGICA DE IDENTIFICACAO:
+- Ao arquivar oferta: todos criativos recebem MESMO archived_at
+- Ao restaurar: compara archived_at do criativo com archived_at da oferta
+- Se iguais: criativo foi arquivado automaticamente (pode restaurar)
+- Se diferentes: criativo foi arquivado manualmente (NAO restaura)
+
+================================================================================
+ALTERACOES ADICIONAIS - 2026-02-04 (Terceira Sessao)
+================================================================================
+
+RESUMO:
+1. Limpeza de imports nao utilizados em ThresholdsDialog.tsx
+2. Correcao da visualizacao de criativos arquivados em OfferDetails.tsx
+
+--------------------------------------------------------------------------------
+
+13. src/components/ThresholdsDialog.tsx
+    -----------------------------------
+    ALTERACAO: Remocao de imports nao utilizados (codigo morto)
+
+    IMPORTS REMOVIDOS:
+    - import { format } from 'date-fns';
+    - import { ptBR } from 'date-fns/locale';
+    - import { CalendarIcon } from 'lucide-react';
+    - import { Calendar } from '@/components/ui/calendar';
+    - import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+
+    MOTIVO: Campo "Valido a partir de" foi removido anteriormente mas
+    os imports permaneceram no arquivo (codigo morto)
+
+--------------------------------------------------------------------------------
+
+14. src/pages/OfferDetails.tsx
+    ---------------------------
+    ALTERACAO: Corrigir contadores de criativos nas abas
+
+    ANTES (linhas 467-475):
+    criativosFB?.filter(c => c.status !== 'arquivado').length || 0
+
+    DEPOIS:
+    oferta?.status === 'arquivado'
+      ? criativosFB?.length || 0
+      : criativosFB?.filter(c => c.status !== 'arquivado').length || 0
+
+    COMPORTAMENTO:
+    - Se a oferta estiver ARQUIVADA: mostra contagem TOTAL de criativos
+      (incluindo arquivados)
+    - Se a oferta NAO estiver arquivada: filtra criativos arquivados
+      da contagem (comportamento anterior)
+
+    APLICADO EM: abas FB, YT e TT
+
+================================================================================
+CENARIO 9: Visualizar criativos de oferta arquivada
+================================================================================
+
+- Usuario clica no card de oferta arquivada
+- Navega para pagina de detalhes da oferta
+- Abas FB/YT/TT agora mostram contagem CORRETA de criativos
+- Criativos arquivados sao exibidos na tabela
+- Filtro de status e escondido (nao faz sentido filtrar status em oferta arquivada)
+
+================================================================================
+ALTERACOES ADICIONAIS - 2026-02-04 (Quarta Sessao)
+================================================================================
+
+RESUMO:
+1. Adicionadas novas colunas na tabela de Gestao de Criativos
+
+--------------------------------------------------------------------------------
+
+15. src/pages/CreativesManagement.tsx
+    ----------------------------------
+    ALTERACAO: Adicionar colunas de metricas adicionais na tabela
+
+    NOVAS COLUNAS ADICIONADAS (apos Status):
+    - Spend: Valor gasto (formatado em EUR)
+    - Impr.: Impressoes (numero inteiro formatado)
+    - Cliques: Numero de cliques (numero inteiro formatado)
+    - Conv.: Conversoes (numero inteiro formatado)
+    - CTR: Click-Through Rate (percentual com 2 casas decimais)
+    - CPM: Cost per Mille (formatado em EUR)
+
+    COLUNAS ANTERIORES (mantidas):
+    - Data, Thumb, ID, Oferta, Fonte, Copywriter, Status
+    - ROAS, IC, CPC (com MetricBadge colorido)
+    - Acoes
+
+    ORDEM FINAL DAS COLUNAS:
+    Data | Thumb | ID | Oferta | Fonte | Copywriter | Status |
+    Spend | Impr. | Cliques | Conv. | CTR | CPM | ROAS | IC | CPC | Acoes
+
+    FUNCIONALIDADES:
+    - Todas as novas colunas sao ordenaveis (clique no cabecalho)
+    - Valores numericos formatados com locale de-DE (1.234,56)
+    - CTR exibido como percentual (ex: 2.35%)
+    - Spend e CPM formatados como moeda EUR
+
+    TIPO SortField ATUALIZADO:
+    - Adicionados: 'ctr' | 'cpm' | 'spend' | 'conversoes' | 'cliques' | 'impressoes'
+
+--------------------------------------------------------------------------------
+
+16. src/components/StickyScrollContainer.tsx (NOVO ARQUIVO)
+    --------------------------------------------------------
+    ALTERACAO: Componente para scrollbar horizontal sticky
+
+    FUNCIONALIDADE:
+    - Mantem a barra de rolagem horizontal sempre visivel no bottom da viewport
+    - Detecta automaticamente se a scrollbar original esta fora da tela
+    - Sincroniza scroll entre o conteudo e a scrollbar sticky
+    - Usa ResizeObserver para detectar mudancas de tamanho
+
+    PROPS:
+    - children: ReactNode (conteudo da tabela)
+    - className?: string (classes CSS adicionais)
+
+--------------------------------------------------------------------------------
+
+17. src/pages/CreativesManagement.tsx
+    ----------------------------------
+    ALTERACAO: Aplicar StickyScrollContainer na tabela
+
+    - Import adicionado: StickyScrollContainer
+    - Tabela envolvida com <StickyScrollContainer>
+    - Scrollbar horizontal agora fica visivel no bottom da tela
+
+--------------------------------------------------------------------------------
+
+18. src/pages/OffersManagement.tsx
+    -------------------------------
+    ALTERACAO: Aplicar StickyScrollContainer na tabela
+
+    - Import adicionado: StickyScrollContainer
+    - Tabela envolvida com <StickyScrollContainer>
+    - Scrollbar horizontal agora fica visivel no bottom da tela
+
+================================================================================
+COMPORTAMENTO DA SCROLLBAR STICKY:
+================================================================================
+
+- Quando a tabela tem mais colunas do que cabe na tela, aparece scroll horizontal
+- Se o usuario rolar a pagina para baixo e a scrollbar original ficar fora da tela,
+  uma scrollbar "clone" aparece fixa no bottom da viewport
+- A scrollbar sticky desaparece automaticamente quando a original esta visivel
+- Os scrolls sao sincronizados (arrastar um move o outro)
+
+================================================================================
+

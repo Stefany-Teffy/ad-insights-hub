@@ -44,6 +44,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { MetricBadge } from '@/components/MetricBadge';
 import { VideoThumbnail } from '@/components/VideoPlayerDialog';
 import { CreatableCombobox } from '@/components/ui/creatable-combobox';
+import { StickyScrollContainer } from '@/components/StickyScrollContainer';
 import { PeriodoFilter, usePeriodo, type PeriodoValue } from '@/components/PeriodoFilter';
 import { formatCurrency, formatRoas, copyToClipboard } from '@/lib/metrics';
 import { formatDate } from '@/lib/format';
@@ -57,11 +58,12 @@ import {
   useUpdateCriativo,
   useArchiveCriativo,
   useCreateCopywriter,
-  useCriativosComMedias,
+  useMetricasDiariasComCriativo,
+  type MetricaDiariaComCriativo,
 } from '@/hooks/useSupabase';
 import { parseThresholds, type Criativo } from '@/services/api';
 
-type SortField = 'roas' | 'ic' | 'cpc' | 'date' | null;
+type SortField = 'roas' | 'ic' | 'cpc' | 'ctr' | 'cpm' | 'spend' | 'conversoes' | 'cliques' | 'impressoes' | 'date' | null;
 type SortDirection = 'asc' | 'desc';
 
 // Status mapping
@@ -98,9 +100,9 @@ const fonteColors: Record<string, string> = {
 // Creative Status Badge Component
 function CreativeStatusBadge({ status }: { status: string }) {
   return (
-    <Badge 
-      variant="outline" 
-      className={cn("font-medium", statusColors[status] || statusColors.nao_validado)}
+    <Badge
+      variant="outline"
+      className={cn("font-medium whitespace-nowrap", statusColors[status] || statusColors.nao_validado)}
     >
       {statusLabels[status] || status}
     </Badge>
@@ -121,9 +123,15 @@ function FonteBadge({ fonte }: { fonte: string }) {
 
 export default function CreativesManagement() {
   const navigate = useNavigate();
+  // UI State - moved up for use in hook
+  const { periodo, setPeriodo } = usePeriodo('7d');
+
   // Supabase hooks
-  const { data: criativos, isLoading: isLoadingCriativos, refetch } = useCriativos();
-  const { data: criativosComMedias } = useCriativosComMedias();
+  const { data: metricasDiarias, isLoading: isLoadingMetricas, refetch } = useMetricasDiariasComCriativo({
+    dataInicio: periodo.dataInicio,
+    dataFim: periodo.dataFim,
+  });
+  const { data: criativos } = useCriativos(); // Keep for edit dialog
   const { data: ofertas, isLoading: isLoadingOfertas } = useOfertasAtivas();
   const { data: copywriters, isLoading: isLoadingCopywriters } = useCopywriters();
   
@@ -141,7 +149,6 @@ export default function CreativesManagement() {
   const [sourceFilter, setSourceFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [copywriterFilter, setCopywriterFilter] = useState<string>('all');
-  const { periodo, setPeriodo } = usePeriodo('7d');
   const [sortField, setSortField] = useState<SortField>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
 
@@ -161,7 +168,6 @@ export default function CreativesManagement() {
   const [editSource, setEditSource] = useState('');
   const [editCopywriter, setEditCopywriter] = useState('');
   const [editStatus, setEditStatus] = useState('');
-  const [editStartDate, setEditStartDate] = useState<Date | undefined>(undefined);
   const [editUrl, setEditUrl] = useState('');
   const [editObservations, setEditObservations] = useState('');
   const [editFieldsEnabled, setEditFieldsEnabled] = useState({
@@ -170,47 +176,12 @@ export default function CreativesManagement() {
     source: false,
     copywriter: false,
     status: false,
-    startDate: false,
     url: false,
     observations: false,
   });
 
   // Convert copywriters to combobox options
   const copywritersOptions = (copywriters || []).map(c => ({ value: c.nome, label: c.nome }));
-
-  // Filter criativos - exclude archived
-  const activeCriativos = (criativos || []).filter(c => c.status !== 'arquivado');
-
-  // Get metrics for a creative from the view based on period
-  const getCreativeMetrics = (criativoId: string) => {
-    const metrics = criativosComMedias?.find(m => m.id === criativoId);
-    if (!metrics) return { spend: 0, roas: 0, ic: 0, cpc: 0 };
-    
-    // Select metrics based on period
-    if (periodo.tipo === 'today') {
-      return {
-        spend: metrics.spend_hoje || 0,
-        roas: metrics.roas_hoje || 0,
-        ic: metrics.ic_hoje || 0,
-        cpc: metrics.cpc_hoje || 0,
-      };
-    } else if (periodo.tipo === '7d') {
-      return {
-        spend: metrics.spend_7d || 0,
-        roas: metrics.roas_7d || 0,
-        ic: metrics.ic_7d || 0,
-        cpc: 0,
-      };
-    } else {
-      // Default to 7d metrics for other periods
-      return {
-        spend: metrics.spend_7d || 0,
-        roas: metrics.roas_7d || 0,
-        ic: metrics.ic_7d || 0,
-        cpc: 0,
-      };
-    }
-  };
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -221,44 +192,71 @@ export default function CreativesManagement() {
     }
   };
 
-  const filteredCreatives = activeCriativos.filter((creative) => {
-    const matchesSearch = creative.id_unico.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesOffer = offerFilter === 'all' || creative.oferta_id === offerFilter;
-    const matchesSource = sourceFilter === 'all' || creative.fonte === sourceFilter;
-    const matchesStatus = statusFilter === 'all' || creative.status === statusFilter;
-    const matchesCopywriter = copywriterFilter === 'all' || creative.copy_responsavel === copywriterFilter;
-    
-    return matchesSearch && matchesOffer && matchesSource && matchesStatus && matchesCopywriter;
+  // Filter metrics (each row is criativo + day)
+  const filteredMetricas = (metricasDiarias || []).filter((metrica) => {
+    if (!metrica.criativo) return false;
+
+    const matchesSearch = metrica.criativo.id_unico.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesOffer = offerFilter === 'all' || metrica.criativo.oferta_id === offerFilter;
+    const matchesSource = sourceFilter === 'all' || metrica.criativo.fonte === sourceFilter;
+    const matchesStatus = statusFilter === 'all' || metrica.criativo.status === statusFilter;
+    const matchesCopywriter = copywriterFilter === 'all' || metrica.criativo.copy_responsavel === copywriterFilter;
+    const notArchived = metrica.criativo.status !== 'arquivado';
+
+    return matchesSearch && matchesOffer && matchesSource && matchesStatus && matchesCopywriter && notArchived;
   });
 
-  const sortedCreatives = [...filteredCreatives].sort((a, b) => {
+  // Sort metrics
+  const sortedMetricas = [...filteredMetricas].sort((a, b) => {
     if (!sortField) return 0;
-    
+
     let aValue: number, bValue: number;
-    const aMetrics = getCreativeMetrics(a.id);
-    const bMetrics = getCreativeMetrics(b.id);
-    
+
     switch (sortField) {
       case 'roas':
-        aValue = aMetrics.roas;
-        bValue = bMetrics.roas;
+        aValue = a.roas || 0;
+        bValue = b.roas || 0;
         break;
       case 'ic':
-        aValue = aMetrics.ic;
-        bValue = bMetrics.ic;
+        aValue = a.ic || 0;
+        bValue = b.ic || 0;
         break;
       case 'cpc':
-        aValue = aMetrics.cpc;
-        bValue = bMetrics.cpc;
+        aValue = a.cpc || 0;
+        bValue = b.cpc || 0;
+        break;
+      case 'ctr':
+        aValue = a.ctr || 0;
+        bValue = b.ctr || 0;
+        break;
+      case 'cpm':
+        aValue = a.cpm || 0;
+        bValue = b.cpm || 0;
+        break;
+      case 'spend':
+        aValue = a.spend || 0;
+        bValue = b.spend || 0;
+        break;
+      case 'conversoes':
+        aValue = a.conversoes || 0;
+        bValue = b.conversoes || 0;
+        break;
+      case 'cliques':
+        aValue = a.cliques || 0;
+        bValue = b.cliques || 0;
+        break;
+      case 'impressoes':
+        aValue = a.impressoes || 0;
+        bValue = b.impressoes || 0;
         break;
       case 'date':
-        aValue = new Date(a.created_at || '').getTime();
-        bValue = new Date(b.created_at || '').getTime();
+        aValue = new Date(a.data).getTime();
+        bValue = new Date(b.data).getTime();
         break;
       default:
         return 0;
     }
-    
+
     return sortDirection === 'asc' ? aValue - bValue : bValue - aValue;
   });
 
@@ -268,20 +266,22 @@ export default function CreativesManagement() {
     return offer?.nome || 'N/A';
   };
 
-  const getOfferThresholds = (ofertaId: string | null) => {
-    if (!ofertaId) {
-      return { roas: { green: 1.3, yellow: 1.1 }, ic: { green: 50, yellow: 60 }, cpc: { green: 1.5, yellow: 2 } };
-    }
-    const offer = ofertas?.find((o) => o.id === ofertaId);
-    if (!offer) {
-      return { roas: { green: 1.3, yellow: 1.1 }, ic: { green: 50, yellow: 60 }, cpc: { green: 1.5, yellow: 2 } };
-    }
-    const t = parseThresholds(offer.thresholds);
+  const getOfferThresholds = (oferta: { thresholds: any } | null | undefined) => {
+    const defaultThresholds = { roas: { green: 1.3, yellow: 1.1 }, ic: { green: 50, yellow: 60 }, cpc: { green: 1.5, yellow: 2 } };
+    if (!oferta) return defaultThresholds;
+    const t = parseThresholds(oferta.thresholds);
     return {
       roas: { green: t.roas.verde, yellow: t.roas.amarelo },
       ic: { green: t.ic.verde, yellow: t.ic.amarelo },
       cpc: { green: t.cpc.verde, yellow: t.cpc.amarelo },
     };
+  };
+
+  // Get offer name from oferta_id (for edit dialog)
+  const getOfferNameById = (ofertaId: string | null) => {
+    if (!ofertaId) return 'N/A';
+    const offer = ofertas?.find((o) => o.id === ofertaId);
+    return offer?.nome || 'N/A';
   };
 
   const resetNewForm = () => {
@@ -338,14 +338,18 @@ export default function CreativesManagement() {
     setEditCopywriter(nome);
   };
 
-  const openEditDialog = (creative: Criativo) => {
+  const openEditDialog = (criativoId: string) => {
+    const creative = criativos?.find(c => c.id === criativoId);
+    if (!creative) {
+      toast.error('Criativo não encontrado');
+      return;
+    }
     setEditingCreative(creative);
     setEditOffer(creative.oferta_id || '');
     setEditId(creative.id_unico);
     setEditSource(creative.fonte);
     setEditCopywriter(creative.copy_responsavel || '');
     setEditStatus(creative.status || 'em_teste');
-    setEditStartDate(creative.created_at ? new Date(creative.created_at) : undefined);
     setEditUrl(creative.url || '');
     setEditObservations(creative.observacoes || '');
     setEditFieldsEnabled({
@@ -354,7 +358,6 @@ export default function CreativesManagement() {
       source: false,
       copywriter: false,
       status: false,
-      startDate: false,
       url: false,
       observations: false,
     });
@@ -415,7 +418,9 @@ export default function CreativesManagement() {
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Gestão de Criativos</h1>
-          <p className="text-sm text-muted-foreground mt-1">Cadastre e gerencie seus criativos</p>
+          <p className="text-sm text-muted-foreground mt-1">
+            {(criativos || []).length} criativo(s) cadastrado(s)
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <Button 
@@ -426,9 +431,9 @@ export default function CreativesManagement() {
               await refetch();
               toast.success('Dados atualizados!');
             }}
-            disabled={isLoadingCriativos}
+            disabled={isLoadingMetricas}
           >
-            {isLoadingCriativos ? (
+            {isLoadingMetricas ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
               <RefreshCw className="h-4 w-4" />
@@ -452,7 +457,7 @@ export default function CreativesManagement() {
               <ScrollArea className="max-h-[60vh] pr-4">
                 <div className="grid gap-4 py-4">
                   <div className="grid gap-2">
-                    <Label htmlFor="offer">Oferta *</Label>
+                    <Label htmlFor="offer">Oferta <span className="text-destructive">*</span></Label>
                     <Select value={newOferta} onValueChange={setNewOferta}>
                       <SelectTrigger>
                         <SelectValue placeholder="Selecione uma oferta" />
@@ -465,18 +470,31 @@ export default function CreativesManagement() {
                     </Select>
                   </div>
                   <div className="grid gap-2">
-                    <Label htmlFor="id">ID Único *</Label>
-                    <Input 
-                      id="id" 
-                      placeholder="Ex: ID01_OFERTA_WL1" 
-                      className="font-mono"
+                    <Label htmlFor="id">ID Único <span className="text-destructive">*</span></Label>
+                    <Input
+                      id="id"
+                      placeholder="Ex: ID01_OFERTA_WL1"
+                      className={cn(
+                        "font-mono",
+                        newIdUnico === 'ID01_OFERTA_WL1' && "text-muted-foreground"
+                      )}
                       value={newIdUnico}
                       onChange={(e) => setNewIdUnico(e.target.value)}
+                      onFocus={(e) => {
+                        if (newIdUnico === 'ID01_OFERTA_WL1') {
+                          e.target.select();
+                        }
+                      }}
                     />
+                    {newIdUnico === 'ID01_OFERTA_WL1' && (
+                      <p className="text-xs text-muted-foreground">
+                        Substitua pelo ID real do criativo
+                      </p>
+                    )}
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="grid gap-2">
-                      <Label htmlFor="source">Fonte *</Label>
+                      <Label htmlFor="source">Fonte <span className="text-destructive">*</span></Label>
                       <Select value={newFonte} onValueChange={setNewFonte}>
                         <SelectTrigger>
                           <SelectValue placeholder="Selecione" />
@@ -490,7 +508,7 @@ export default function CreativesManagement() {
                       </Select>
                     </div>
                     <div className="grid gap-2">
-                      <Label htmlFor="copywriter">Copywriter *</Label>
+                      <Label htmlFor="copywriter">Copywriter <span className="text-destructive">*</span></Label>
                       <CreatableCombobox
                         options={copywritersOptions}
                         value={newCopywriter}
@@ -625,14 +643,15 @@ export default function CreativesManagement() {
       </Card>
 
       {/* Loading State */}
-      {isLoadingCriativos ? (
+      {isLoadingMetricas ? (
         <div className="flex items-center justify-center py-12">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
       ) : (
-        /* Table */
-        <Card className="p-0 overflow-hidden">
-          <Table>
+        /* Table - now shows one row per criativo + day */
+        <Card className="p-0">
+          <StickyScrollContainer>
+          <Table noOverflow>
             <TableHeader>
               <TableRow>
                 <SortableHeader field="date">Data</SortableHeader>
@@ -645,57 +664,60 @@ export default function CreativesManagement() {
                 <SortableHeader field="roas" className="text-right">ROAS</SortableHeader>
                 <SortableHeader field="ic" className="text-right">IC</SortableHeader>
                 <SortableHeader field="cpc" className="text-right">CPC</SortableHeader>
+                <SortableHeader field="ctr" className="text-right">CTR</SortableHeader>
+                <SortableHeader field="cpm" className="text-right">CPM</SortableHeader>
+                <SortableHeader field="impressoes" className="text-right">Impr.</SortableHeader>
+                <SortableHeader field="cliques" className="text-right">Cliques</SortableHeader>
+                <SortableHeader field="spend" className="text-right">Spend</SortableHeader>
+                <SortableHeader field="conversoes" className="text-right">Conv.</SortableHeader>
                 <TableHead className="text-right">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {sortedCreatives.length === 0 ? (
+              {sortedMetricas.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={11} className="text-center text-muted-foreground py-8">
-                    Nenhum criativo encontrado.
+                  <TableCell colSpan={17} className="text-center text-muted-foreground py-8">
+                    Nenhuma metrica encontrada para o periodo selecionado.
                   </TableCell>
                 </TableRow>
               ) : (
-                sortedCreatives.map((creative) => {
-                  const metrics = getCreativeMetrics(creative.id);
-                  const thresholds = getOfferThresholds(creative.oferta_id);
+                sortedMetricas.map((metrica) => {
+                  if (!metrica.criativo) return null;
+                  const thresholds = getOfferThresholds(metrica.criativo.oferta);
 
                   return (
-                    <TableRow key={creative.id}>
+                    <TableRow key={metrica.id}>
                       <TableCell>
-                        {creative.created_at 
-                          ? new Date(creative.created_at).toLocaleDateString('pt-BR')
-                          : '-'
-                        }
+                        {formatDate(metrica.data)}
                       </TableCell>
                       <TableCell>
-                        <VideoThumbnail url={creative.url} creativeId={creative.id_unico} />
+                        <VideoThumbnail url={metrica.criativo.url} creativeId={metrica.criativo.id_unico} />
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
-                          <span className="font-mono text-sm">{creative.id_unico}</span>
+                          <span className="font-mono text-sm">{metrica.criativo.id_unico}</span>
                           <Button
                             variant="ghost"
                             size="icon"
                             className="h-6 w-6"
-                            onClick={() => copyToClipboard(creative.id_unico)}
+                            onClick={() => copyToClipboard(metrica.criativo!.id_unico)}
                             title="Copiar ID"
                           >
                             <Copy className="h-3 w-3" />
                           </Button>
                         </div>
                       </TableCell>
-                      <TableCell>{getOfferName(creative.oferta_id)}</TableCell>
+                      <TableCell>{metrica.criativo.oferta?.nome || 'N/A'}</TableCell>
                       <TableCell>
-                        <FonteBadge fonte={creative.fonte} />
+                        <FonteBadge fonte={metrica.criativo.fonte} />
                       </TableCell>
-                      <TableCell>{creative.copy_responsavel || '-'}</TableCell>
+                      <TableCell>{metrica.criativo.copy_responsavel || '-'}</TableCell>
                       <TableCell>
-                        <CreativeStatusBadge status={creative.status || 'nao_validado'} />
+                        <CreativeStatusBadge status={metrica.criativo.status || 'nao_validado'} />
                       </TableCell>
                       <TableCell className="text-right">
                         <MetricBadge
-                          value={metrics.roas}
+                          value={metrica.roas || 0}
                           metricType="roas"
                           thresholds={thresholds}
                           format={formatRoas}
@@ -703,7 +725,7 @@ export default function CreativesManagement() {
                       </TableCell>
                       <TableCell className="text-right">
                         <MetricBadge
-                          value={metrics.ic}
+                          value={metrica.ic || 0}
                           metricType="ic"
                           thresholds={thresholds}
                           format={(v) => formatCurrency(v)}
@@ -711,19 +733,37 @@ export default function CreativesManagement() {
                       </TableCell>
                       <TableCell className="text-right">
                         <MetricBadge
-                          value={metrics.cpc}
+                          value={metrica.cpc || 0}
                           metricType="cpc"
                           thresholds={thresholds}
                           format={(v) => formatCurrency(v)}
                         />
                       </TableCell>
+                      <TableCell className="text-right font-mono text-sm">
+                        {((metrica.ctr || 0) * 100).toFixed(2)}%
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm">
+                        {formatCurrency(metrica.cpm || 0)}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm">
+                        {(metrica.impressoes || 0).toLocaleString('de-DE')}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm">
+                        {(metrica.cliques || 0).toLocaleString('de-DE')}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm">
+                        {formatCurrency(metrica.spend || 0)}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm">
+                        {(metrica.conversoes || 0).toLocaleString('de-DE')}
+                      </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1">
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
+                          <Button
+                            variant="ghost"
+                            size="icon"
                             className="h-8 w-8"
-                            onClick={() => openEditDialog(creative)}
+                            onClick={() => openEditDialog(metrica.criativo!.id)}
                             title="Editar criativo"
                           >
                             <Pencil className="h-4 w-4" />
@@ -736,6 +776,7 @@ export default function CreativesManagement() {
               )}
             </TableBody>
           </Table>
+          </StickyScrollContainer>
         </Card>
       )}
 
@@ -913,15 +954,6 @@ export default function CreativesManagement() {
                 />
               </div>
 
-              {/* Edit date (locked) */}
-              <div className="grid gap-2">
-                <Label className="text-muted-foreground">Data de Edição</Label>
-                <Input 
-                  value={format(new Date(), "dd/MM/yyyy", { locale: ptBR })}
-                  disabled 
-                  className="bg-muted" 
-                />
-              </div>
             </div>
           </ScrollArea>
           <DialogFooter>
@@ -958,7 +990,7 @@ export default function CreativesManagement() {
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
                 <Label className="text-muted-foreground">Oferta</Label>
-                <Input value={getOfferName(editOffer)} disabled className="bg-muted" />
+                <Input value={getOfferNameById(editOffer)} disabled className="bg-muted" />
               </div>
               <div className="grid gap-2">
                 <Label className="text-muted-foreground">Fonte</Label>

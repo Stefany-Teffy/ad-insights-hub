@@ -48,6 +48,7 @@ import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { StatusBadge, MetricBadge } from '@/components/MetricBadge';
 import { CreatableCombobox } from '@/components/ui/creatable-combobox';
+import { StickyScrollContainer } from '@/components/StickyScrollContainer';
 import { PeriodoFilter, usePeriodo, type PeriodoValue } from '@/components/PeriodoFilter';
 import { ThresholdsDialog } from '@/components/ThresholdsDialog';
 import { formatCurrency, formatRoas, getMetricStatus, getMetricClass } from '@/lib/metrics';
@@ -313,19 +314,43 @@ export default function OffersManagement() {
     if (!editingOffer) return;
 
     try {
-      const updates: Record<string, any> = {};
-      
-      if (editFieldsEnabled.name) updates.nome = editName;
-      if (editFieldsEnabled.niche) updates.nicho = editNiche;
-      if (editFieldsEnabled.country) updates.pais = editCountry;
-      if (editFieldsEnabled.status) updates.status = editStatus;
+      // Verificar se está arquivando a oferta
+      const isArchiving = editFieldsEnabled.status && editStatus === 'arquivado' && editingOffer.status !== 'arquivado';
 
-      await updateOfertaMutation.mutateAsync({
-        id: editingOffer.id,
-        updates,
-      });
+      if (isArchiving) {
+        // Usar archiveOfertaMutation para arquivar oferta E criativos
+        await archiveOfertaMutation.mutateAsync(editingOffer.id);
 
-      toast.success('As alterações foram salvas com sucesso.');
+        // Se houver outras alterações além do status, aplicá-las também
+        const otherUpdates: Record<string, any> = {};
+        if (editFieldsEnabled.name) otherUpdates.nome = editName;
+        if (editFieldsEnabled.niche) otherUpdates.nicho = editNiche;
+        if (editFieldsEnabled.country) otherUpdates.pais = editCountry;
+
+        if (Object.keys(otherUpdates).length > 0) {
+          await updateOfertaMutation.mutateAsync({
+            id: editingOffer.id,
+            updates: otherUpdates,
+          });
+        }
+
+        toast.success('Oferta arquivada com sucesso. Todos os criativos vinculados também foram arquivados.');
+      } else {
+        // Atualização normal (sem arquivamento)
+        const updates: Record<string, any> = {};
+
+        if (editFieldsEnabled.name) updates.nome = editName;
+        if (editFieldsEnabled.niche) updates.nicho = editNiche;
+        if (editFieldsEnabled.country) updates.pais = editCountry;
+        if (editFieldsEnabled.status) updates.status = editStatus;
+
+        await updateOfertaMutation.mutateAsync({
+          id: editingOffer.id,
+          updates,
+        });
+
+        toast.success('As alterações foram salvas com sucesso.');
+      }
 
       setIsConfirmDialogOpen(false);
       setIsEditSheetOpen(false);
@@ -374,7 +399,9 @@ export default function OffersManagement() {
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Gestão de Ofertas</h1>
-          <p className="text-sm text-muted-foreground mt-1">Cadastre e gerencie suas ofertas</p>
+          <p className="text-sm text-muted-foreground mt-1">
+            {(ofertas || []).filter(o => o.status !== 'arquivado').length} oferta(s) cadastrada(s)
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <Button 
@@ -691,8 +718,9 @@ export default function OffersManagement() {
         </div>
       ) : (
         /* Table */
-        <Card className="p-0 overflow-hidden">
-          <Table>
+        <Card className="p-0">
+          <StickyScrollContainer>
+          <Table noOverflow>
             <TableHeader>
               <TableRow>
                 <SortableHeader field="date">Data</SortableHeader>
@@ -792,6 +820,7 @@ export default function OffersManagement() {
               )}
             </TableBody>
           </Table>
+          </StickyScrollContainer>
         </Card>
       )}
 
@@ -913,15 +942,6 @@ export default function OffersManagement() {
                 </Select>
               </div>
 
-              {/* Edit date (locked) */}
-              <div className="grid gap-2">
-                <Label className="text-muted-foreground">Data de Edição</Label>
-                <Input 
-                  value={format(new Date(), "dd/MM/yyyy", { locale: ptBR })}
-                  disabled 
-                  className="bg-muted" 
-                />
-              </div>
             </div>
           </ScrollArea>
           <SheetFooter className="mt-4">

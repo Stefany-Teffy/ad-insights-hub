@@ -1,10 +1,9 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 /* TrackFlow Design System - Ad Tracking Dashboard */
-
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
 @layer base {
   :root {
@@ -43,15 +42,15 @@
     --success: 160 84% 39%;
     --success-foreground: 0 0% 100%;
     --success-light: 160 84% 95%;
-    
+
     --warning: 38 92% 50%;
     --warning-foreground: 0 0% 100%;
     --warning-light: 38 92% 95%;
-    
+
     --danger: 0 84% 60%;
     --danger-foreground: 0 0% 100%;
     --danger-light: 0 84% 95%;
-    
+
     --info: 217 91% 60%;
     --info-foreground: 0 0% 100%;
     --info-light: 217 91% 95%;
@@ -100,15 +99,15 @@
     --success: 160 84% 39%;
     --success-foreground: 0 0% 100%;
     --success-light: 160 84% 15%;
-    
+
     --warning: 38 92% 50%;
     --warning-foreground: 0 0% 100%;
     --warning-light: 38 92% 15%;
-    
+
     --danger: 0 84% 60%;
     --danger-foreground: 0 0% 100%;
     --danger-light: 0 84% 15%;
-    
+
     --info: 217 91% 60%;
     --info-foreground: 0 0% 100%;
     --info-light: 217 91% 15%;
@@ -131,7 +130,7 @@
 
   body {
     @apply bg-background text-foreground font-sans antialiased;
-    font-family: 'Inter', system-ui, sans-serif;
+    font-family: "Inter", system-ui, sans-serif;
   }
 }
 
@@ -139,15 +138,15 @@
   .metric-success {
     @apply bg-success/10 text-success border-success/20;
   }
-  
+
   .metric-warning {
     @apply bg-warning/10 text-warning border-warning/20;
   }
-  
+
   .metric-danger {
     @apply bg-danger/10 text-danger border-danger/20;
   }
-  
+
   .metric-neutral {
     @apply bg-muted text-muted-foreground;
   }

@@ -13,9 +13,9 @@ import { KPIDualCard } from '@/components/KPICard';
 import { OfferCard } from '@/components/OfferCard';
 import { formatCurrency, formatRoas, getMetricStatus } from '@/lib/metrics';
 import { parseThresholds } from '@/services/api';
-import { 
-  useOfertasAtivas, 
-  useTotaisOfertas, 
+import {
+  useOfertas,
+  useTotaisOfertas,
   useContadorCriativos,
   useNichos,
   usePaises,
@@ -38,9 +38,10 @@ export default function Dashboard() {
   const [nicheFilter, setNicheFilter] = useState<string>('all');
   const [countryFilter, setCountryFilter] = useState<string>('all');
   const [healthFilter, setHealthFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<'ativo' | 'pausado'>('ativo');
 
-  // Supabase hooks
-  const { data: ofertas, isLoading: isLoadingOfertas, refetch: refetchOfertas } = useOfertasAtivas();
+  // Supabase hooks - busca todas as ofertas (exceto arquivadas) para permitir filtro por status
+  const { data: todasOfertas, isLoading: isLoadingOfertas, refetch: refetchOfertas } = useOfertas();
   const { data: totais, isLoading: isLoadingTotais, refetch: refetchTotais } = useTotaisOfertas();
   const { data: contadorCriativos, isLoading: isLoadingContador, refetch: refetchContador } = useContadorCriativos();
   const { data: nichos } = useNichos();
@@ -59,25 +60,33 @@ export default function Dashboard() {
     toast.success('Dados atualizados!');
   };
 
+  // Filtrar ofertas por status (exclui arquivadas)
+  const ofertas = useMemo(() => {
+    if (!todasOfertas) return [];
+    return todasOfertas.filter(o => o.status !== 'arquivado');
+  }, [todasOfertas]);
+
   // Filter offers using REAL aggregated metrics
   const filteredOffers = useMemo(() => {
     if (!ofertas) return [];
-    
+
     return ofertas.filter((offer) => {
+      // Filtro de status (ativo/pausado)
+      const matchesStatus = offer.status === statusFilter;
       const matchesSearch = offer.nome.toLowerCase().includes(searchQuery.toLowerCase());
       const matchesNiche = nicheFilter === 'all' || offer.nicho === nicheFilter;
       const matchesCountry = countryFilter === 'all' || offer.pais === countryFilter;
-      
+
       // Calculate health based on REAL ROAS from aggregated metrics
       const thresholds = convertThresholds(parseThresholds(offer.thresholds));
       const offerMetrics = aggregatedMetrics?.get(offer.id);
       const roasTotal = offerMetrics?.roasTotal ?? 0;
       const health = getMetricStatus(roasTotal, 'roas', thresholds);
       const matchesHealth = healthFilter === 'all' || health === healthFilter;
-      
-      return matchesSearch && matchesNiche && matchesCountry && matchesHealth;
+
+      return matchesStatus && matchesSearch && matchesNiche && matchesCountry && matchesHealth;
     });
-  }, [ofertas, searchQuery, nicheFilter, countryFilter, healthFilter, aggregatedMetrics]);
+  }, [ofertas, statusFilter, searchQuery, nicheFilter, countryFilter, healthFilter, aggregatedMetrics]);
 
   // Get unique values from database
   const nichosList = useMemo(() => {
@@ -93,7 +102,7 @@ export default function Dashboard() {
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Painel de Ofertas Ativas</h1>
+          <h1 className="text-2xl font-bold text-foreground">Painel de Ofertas</h1>
           <p className="text-sm text-muted-foreground mt-1">Visão geral de performance</p>
         </div>
         <Button 
@@ -169,6 +178,15 @@ export default function Dashboard() {
             />
           </div>
         </div>
+        <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as 'ativo' | 'pausado')}>
+          <SelectTrigger className="w-[180px]">
+            <SelectValue placeholder="Status da Oferta" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ativo">Ofertas Ativas</SelectItem>
+            <SelectItem value="pausado">Ofertas Pausadas</SelectItem>
+          </SelectContent>
+        </Select>
         <Select value={nicheFilter} onValueChange={setNicheFilter}>
           <SelectTrigger className="w-[150px]">
             <SelectValue placeholder="Nicho" />

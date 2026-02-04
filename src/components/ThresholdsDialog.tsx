@@ -1,11 +1,8 @@
 import { useState, useEffect } from 'react';
-import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
-import { CalendarIcon, Pencil, Loader2 } from 'lucide-react';
+import { Pencil, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Calendar } from '@/components/ui/calendar';
 import {
   Dialog,
   DialogContent,
@@ -14,11 +11,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
@@ -63,7 +55,6 @@ export function ThresholdsDialog({
   const [icAmarelo, setIcAmarelo] = useState('');
   const [cpcVerde, setCpcVerde] = useState('');
   const [cpcAmarelo, setCpcAmarelo] = useState('');
-  const [validoA, setValidoA] = useState<Date>(new Date());
 
   // Current thresholds
   const currentThresholds = parseThresholds(oferta?.thresholds);
@@ -78,7 +69,6 @@ export function ThresholdsDialog({
       setIcAmarelo(t.ic.amarelo.toString());
       setCpcVerde(t.cpc.verde.toString());
       setCpcAmarelo(t.cpc.amarelo.toString());
-      setValidoA(new Date());
       setMode('view');
     }
   }, [oferta, open]);
@@ -332,31 +322,6 @@ export function ThresholdsDialog({
                       />
                     </div>
                   </div>
-                </div>
-
-                {/* Valid from date */}
-                <div className="space-y-2">
-                  <Label>Válido a partir de</Label>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        className="w-full justify-start text-left font-normal"
-                      >
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {format(validoA, "PPP", { locale: ptBR })}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar
-                        mode="single"
-                        selected={validoA}
-                        onSelect={(date) => date && setValidoA(date)}
-                        locale={ptBR}
-                        initialFocus
-                      />
-                    </PopoverContent>
-                  </Popover>
                 </div>
               </div>
 

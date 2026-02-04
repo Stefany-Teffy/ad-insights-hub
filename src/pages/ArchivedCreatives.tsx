@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Trash2, RotateCcw, Search, RefreshCw, Loader2, Image } from 'lucide-react';
+import { ArrowLeft, Trash2, RotateCcw, Search, RefreshCw, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
@@ -27,29 +27,32 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { StatusBadge } from '@/components/MetricBadge';
+import { CreativeCard } from '@/components/CreativeCard';
+import { MetricBadge } from '@/components/MetricBadge';
 import { formatDate } from '@/lib/format';
+import { formatCurrency, formatRoas, getMetricStatus, getMetricClass } from '@/lib/metrics';
+import { parseThresholds } from '@/services/api';
 import { toast } from 'sonner';
 import {
   useCriativosArquivados,
   useUpdateCriativo,
   useDeleteCriativo,
-  useOfertasAtivas,
+  useOfertas,
   useCopywriters,
+  useMetricasCriativo,
+  useAllCriativosAggregatedMetrics,
 } from '@/hooks/useSupabase';
-import type { Criativo } from '@/services/api';
+import type { Criativo, Oferta } from '@/services/api';
+import { cn } from '@/lib/utils';
 
-const sourceColors: Record<string, string> = {
-  facebook: 'bg-info/10 text-info',
-  youtube: 'bg-destructive/10 text-destructive',
-  tiktok: 'bg-purple-500/10 text-purple-500',
-};
-
-const sourceLabels: Record<string, string> = {
-  facebook: 'Facebook',
-  youtube: 'YouTube',
-  tiktok: 'TikTok',
-};
+// Convert thresholds to format expected by metrics utils
+function convertThresholds(thresholds: ReturnType<typeof parseThresholds>) {
+  return {
+    roas: { green: thresholds.roas.verde, yellow: thresholds.roas.amarelo },
+    ic: { green: thresholds.ic.verde, yellow: thresholds.ic.amarelo },
+    cpc: { green: thresholds.cpc.verde, yellow: thresholds.cpc.amarelo },
+  };
+}
 
 export default function ArchivedCreatives() {
   const navigate = useNavigate();
@@ -57,41 +60,72 @@ export default function ArchivedCreatives() {
   const [offerFilter, setOfferFilter] = useState<string>('all');
   const [sourceFilter, setSourceFilter] = useState<string>('all');
   const [copywriterFilter, setCopywriterFilter] = useState<string>('all');
-  
+
   // Delete dialog state
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [selectedCreative, setSelectedCreative] = useState<Criativo | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState('');
 
-  // Hooks
+  // Metrics dialog state
+  const [isMetricsDialogOpen, setIsMetricsDialogOpen] = useState(false);
+  const [metricsCreative, setMetricsCreative] = useState<Criativo | null>(null);
+
+  // Hooks - usar useOfertas() para obter todas as ofertas (inclusive arquivadas)
   const { data: criativos, isLoading, refetch } = useCriativosArquivados();
-  const { data: ofertas } = useOfertasAtivas();
+  const { data: ofertas } = useOfertas();
   const { data: copywriters } = useCopywriters();
+  const { data: aggregatedMetrics } = useAllCriativosAggregatedMetrics();
   const updateCriativo = useUpdateCriativo();
   const deleteCriativo = useDeleteCriativo();
 
+  // Hook para buscar métricas do criativo selecionado
+  const { data: selectedCreativeMetrics, isLoading: isLoadingMetrics } = useMetricasCriativo(
+    metricsCreative?.id || '',
+    'all'
+  );
+
+  // Calcular métricas agregadas por criativo usando o hook
+  const criativosComMetricas = useMemo(() => {
+    if (!criativos) return [];
+
+    return criativos.map(criativo => {
+      const metrics = aggregatedMetrics?.get(criativo.id);
+      return {
+        criativo,
+        metrics: {
+          spend: metrics?.spend ?? 0,
+          faturado: metrics?.faturado ?? 0,
+          roas: metrics?.roas ?? 0,
+          ic: metrics?.ic ?? 0,
+          cpc: metrics?.cpc ?? 0,
+        }
+      };
+    });
+  }, [criativos, aggregatedMetrics]);
+
   // Filter creatives
-  const filteredCreatives = (criativos || []).filter((creative) => {
-    const matchesSearch = creative.id_unico.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesOffer = offerFilter === 'all' || creative.oferta_id === offerFilter;
-    const matchesSource = sourceFilter === 'all' || creative.fonte === sourceFilter;
-    const matchesCopywriter = copywriterFilter === 'all' || creative.copy_responsavel === copywriterFilter;
+  const filteredCreatives = criativosComMetricas.filter(({ criativo }) => {
+    const matchesSearch = criativo.id_unico.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesOffer = offerFilter === 'all' || criativo.oferta_id === offerFilter;
+    const matchesSource = sourceFilter === 'all' || criativo.fonte === sourceFilter;
+    const matchesCopywriter = copywriterFilter === 'all' || criativo.copy_responsavel === copywriterFilter;
     return matchesSearch && matchesOffer && matchesSource && matchesCopywriter;
   });
 
-  const getOfferName = (offerId: string | null) => {
-    if (!offerId) return 'Sem oferta';
-    const offer = (ofertas || []).find((o) => o.id === offerId);
-    return offer?.nome || 'N/A';
+  const getOffer = (offerId: string | null): Oferta | null => {
+    if (!offerId) return null;
+    return (ofertas || []).find((o) => o.id === offerId) || null;
   };
 
-  const handleDeleteClick = (creative: Criativo) => {
+  const handleDeleteClick = (creative: Criativo, e: React.MouseEvent) => {
+    e.stopPropagation();
     setSelectedCreative(creative);
     setDeleteConfirmId('');
     setIsDeleteDialogOpen(true);
   };
 
-  const handleRestore = async (creative: Criativo) => {
+  const handleRestore = async (creative: Criativo, e: React.MouseEvent) => {
+    e.stopPropagation();
     try {
       await updateCriativo.mutateAsync({
         id: creative.id,
@@ -103,9 +137,14 @@ export default function ArchivedCreatives() {
     }
   };
 
+  const handleCardClick = (creative: Criativo) => {
+    setMetricsCreative(creative);
+    setIsMetricsDialogOpen(true);
+  };
+
   const handleConfirmDelete = async () => {
     if (!selectedCreative || deleteConfirmId !== selectedCreative.id_unico) return;
-    
+
     try {
       await deleteCriativo.mutateAsync(selectedCreative.id);
       toast.success(`"${selectedCreative.id_unico}" foi excluído permanentemente.`);
@@ -123,6 +162,37 @@ export default function ArchivedCreatives() {
   };
 
   const isDeleteEnabled = selectedCreative && deleteConfirmId === selectedCreative.id_unico;
+
+  // Calcular totais das métricas para o dialog
+  const metricsTotals = useMemo(() => {
+    if (!selectedCreativeMetrics || selectedCreativeMetrics.length === 0) {
+      return { spend: 0, faturado: 0, roas: 0, ic: 0, cpc: 0 };
+    }
+
+    const spend = selectedCreativeMetrics.reduce((acc, m) => acc + (m.spend || 0), 0);
+    const faturado = selectedCreativeMetrics.reduce((acc, m) => acc + (m.faturado || 0), 0);
+    const roas = spend > 0 ? faturado / spend : 0;
+
+    // Média de IC e CPC
+    const totalMetricsWithIC = selectedCreativeMetrics.filter(m => m.ic !== null && m.ic !== undefined);
+    const ic = totalMetricsWithIC.length > 0
+      ? totalMetricsWithIC.reduce((acc, m) => acc + (m.ic || 0), 0) / totalMetricsWithIC.length
+      : 0;
+
+    const totalMetricsWithCPC = selectedCreativeMetrics.filter(m => m.cpc !== null && m.cpc !== undefined);
+    const cpc = totalMetricsWithCPC.length > 0
+      ? totalMetricsWithCPC.reduce((acc, m) => acc + (m.cpc || 0), 0) / totalMetricsWithCPC.length
+      : 0;
+
+    return { spend, faturado, roas, ic, cpc };
+  }, [selectedCreativeMetrics]);
+
+  // Get thresholds from the offer for metrics dialog
+  const metricsThresholds = useMemo(() => {
+    if (!metricsCreative) return convertThresholds(parseThresholds(null));
+    const offer = getOffer(metricsCreative.oferta_id);
+    return convertThresholds(parseThresholds(offer?.thresholds || null));
+  }, [metricsCreative, ofertas]);
 
   if (isLoading) {
     return (
@@ -199,79 +269,171 @@ export default function ArchivedCreatives() {
         </div>
       </Card>
 
-      {/* Table */}
-      <Card className="p-0 overflow-hidden">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Data Criação</TableHead>
-              <TableHead className="w-[60px]">Thumb</TableHead>
-              <TableHead>ID</TableHead>
-              <TableHead>Oferta</TableHead>
-              <TableHead>Fonte</TableHead>
-              <TableHead>Copywriter</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Ações</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filteredCreatives.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
-                  Nenhum criativo arquivado encontrado.
-                </TableCell>
-              </TableRow>
-            ) : (
-              filteredCreatives.map((creative) => (
-                <TableRow key={creative.id}>
-                  <TableCell>
-                    {creative.created_at ? formatDate(creative.created_at) : '-'}
-                  </TableCell>
-                  <TableCell>
-                    <div className="h-10 w-10 rounded bg-muted flex items-center justify-center">
-                      <Image className="h-4 w-4 text-muted-foreground" />
-                    </div>
-                  </TableCell>
-                  <TableCell className="font-mono text-sm">{creative.id_unico}</TableCell>
-                  <TableCell>{getOfferName(creative.oferta_id)}</TableCell>
-                  <TableCell>
-                    <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ${
-                      sourceColors[creative.fonte] || 'bg-muted text-muted-foreground'
-                    }`}>
-                      {sourceLabels[creative.fonte] || creative.fonte}
-                    </span>
-                  </TableCell>
-                  <TableCell>{creative.copy_responsavel || '-'}</TableCell>
-                  <TableCell><StatusBadge status="archived" /></TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        className="h-8 w-8"
-                        onClick={() => handleRestore(creative)}
-                        disabled={updateCriativo.isPending}
-                        title="Restaurar criativo"
-                      >
-                        <RotateCcw className="h-4 w-4" />
-                      </Button>
-                      <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        className="h-8 w-8 text-destructive hover:text-destructive"
-                        onClick={() => handleDeleteClick(creative)}
-                        title="Excluir permanentemente"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </TableCell>
+      {/* Cards Grid */}
+      {filteredCreatives.length === 0 ? (
+        <div className="text-center py-12 text-muted-foreground">
+          <p>Nenhum criativo arquivado encontrado.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filteredCreatives.map(({ criativo, metrics }) => (
+            <div key={criativo.id} className="relative">
+              <CreativeCard
+                criativo={criativo}
+                oferta={getOffer(criativo.oferta_id)}
+                metrics={metrics}
+                onClick={() => handleCardClick(criativo)}
+              />
+              {/* Action icons overlay */}
+              <div className="absolute top-2 right-2 flex gap-1">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 bg-background/80 hover:bg-background"
+                  onClick={(e) => handleRestore(criativo, e)}
+                  disabled={updateCriativo.isPending}
+                  title="Restaurar criativo"
+                >
+                  <RotateCcw className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 bg-background/80 hover:bg-background text-destructive hover:text-destructive"
+                  onClick={(e) => handleDeleteClick(criativo, e)}
+                  title="Excluir permanentemente"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Metrics History Dialog */}
+      <Dialog open={isMetricsDialogOpen} onOpenChange={setIsMetricsDialogOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              Histórico de Métricas - {metricsCreative?.id_unico}
+            </DialogTitle>
+            <DialogDescription>
+              Oferta: {getOffer(metricsCreative?.oferta_id || null)?.nome || 'Sem oferta'}
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* Summary */}
+          <div className="grid grid-cols-5 gap-4 p-4 bg-muted/50 rounded-lg">
+            <div className="text-center">
+              <p className="text-xs text-muted-foreground">Spend Total</p>
+              <p className="text-lg font-semibold">{formatCurrency(metricsTotals.spend)}</p>
+            </div>
+            <div className="text-center">
+              <p className="text-xs text-muted-foreground">Faturado</p>
+              <p className="text-lg font-semibold">{formatCurrency(metricsTotals.faturado)}</p>
+            </div>
+            <div className="text-center">
+              <p className="text-xs text-muted-foreground">ROAS</p>
+              <p className={cn(
+                "text-lg font-semibold",
+                getMetricClass(getMetricStatus(metricsTotals.roas, 'roas', metricsThresholds))
+              )}>
+                {formatRoas(metricsTotals.roas)}
+              </p>
+            </div>
+            <div className="text-center">
+              <p className="text-xs text-muted-foreground">IC Médio</p>
+              <p className={cn(
+                "text-lg font-semibold",
+                getMetricClass(getMetricStatus(metricsTotals.ic, 'ic', metricsThresholds))
+              )}>
+                {formatCurrency(metricsTotals.ic)}
+              </p>
+            </div>
+            <div className="text-center">
+              <p className="text-xs text-muted-foreground">CPC Médio</p>
+              <p className={cn(
+                "text-lg font-semibold",
+                getMetricClass(getMetricStatus(metricsTotals.cpc, 'cpc', metricsThresholds))
+              )}>
+                {formatCurrency(metricsTotals.cpc)}
+              </p>
+            </div>
+          </div>
+
+          {/* Metrics Table */}
+          {isLoadingMetrics ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : selectedCreativeMetrics && selectedCreativeMetrics.length > 0 ? (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Data</TableHead>
+                  <TableHead className="text-right">Spend</TableHead>
+                  <TableHead className="text-right">Faturado</TableHead>
+                  <TableHead className="text-right">ROAS</TableHead>
+                  <TableHead className="text-right">IC</TableHead>
+                  <TableHead className="text-right">CPC</TableHead>
                 </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </Card>
+              </TableHeader>
+              <TableBody>
+                {selectedCreativeMetrics.map((metric) => {
+                  const spend = metric.spend || 0;
+                  const faturado = metric.faturado || 0;
+                  const roas = spend > 0 ? faturado / spend : 0;
+                  const ic = metric.ic || 0;
+                  const cpc = metric.cpc || 0;
+
+                  return (
+                    <TableRow key={metric.id}>
+                      <TableCell>{formatDate(metric.data)}</TableCell>
+                      <TableCell className="text-right">{formatCurrency(spend)}</TableCell>
+                      <TableCell className="text-right">{formatCurrency(faturado)}</TableCell>
+                      <TableCell className="text-right">
+                        <span className={cn(
+                          'font-medium',
+                          getMetricClass(getMetricStatus(roas, 'roas', metricsThresholds))
+                        )}>
+                          {formatRoas(roas)}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <span className={cn(
+                          'font-medium',
+                          getMetricClass(getMetricStatus(ic, 'ic', metricsThresholds))
+                        )}>
+                          {formatCurrency(ic)}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <span className={cn(
+                          'font-medium',
+                          getMetricClass(getMetricStatus(cpc, 'cpc', metricsThresholds))
+                        )}>
+                          {formatCurrency(cpc)}
+                        </span>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          ) : (
+            <div className="text-center py-8 text-muted-foreground">
+              <p>Nenhuma métrica encontrada para este criativo.</p>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsMetricsDialogOpen(false)}>
+              Fechar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Delete Confirmation Dialog */}
       <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
@@ -311,8 +473,8 @@ export default function ArchivedCreatives() {
             <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>
               Cancelar
             </Button>
-            <Button 
-              variant="destructive" 
+            <Button
+              variant="destructive"
               onClick={handleConfirmDelete}
               disabled={!isDeleteEnabled || deleteCriativo.isPending}
             >

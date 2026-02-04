@@ -34,6 +34,7 @@ export type Database = {
       }
       criativos: {
         Row: {
+          archived_at: string | null
           copy_responsavel: string
           created_at: string | null
           created_by: string | null
@@ -48,6 +49,7 @@ export type Database = {
           url: string | null
         }
         Insert: {
+          archived_at?: string | null
           copy_responsavel: string
           created_at?: string | null
           created_by?: string | null
@@ -62,6 +64,7 @@ export type Database = {
           url?: string | null
         }
         Update: {
+          archived_at?: string | null
           copy_responsavel?: string
           created_at?: string | null
           created_by?: string | null
@@ -254,6 +257,7 @@ export type Database = {
       }
       ofertas: {
         Row: {
+          archived_at: string | null
           created_at: string | null
           data: string
           id: string
@@ -265,6 +269,7 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
+          archived_at?: string | null
           created_at?: string | null
           data: string
           id?: string
@@ -276,6 +281,7 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
+          archived_at?: string | null
           created_at?: string | null
           data?: string
           id?: string

@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
 import {
   // Ofertas
   fetchOfertas,
@@ -8,6 +9,7 @@ import {
   archiveOferta,
   restoreOferta,
   deleteOferta,
+  countCriativosArquivadosComOferta,
   // Criativos
   fetchCriativos,
   fetchCriativosComMedias,
@@ -62,6 +64,7 @@ export const queryKeys = {
     byCriativo: (criativoId: string, periodo?: string) => ['metricas', 'criativo', criativoId, periodo] as const,
     byOferta: (ofertaId: string, periodo?: string) => ['metricas', 'oferta', ofertaId, periodo] as const,
     diariasComOferta: (filters?: Record<string, string>) => ['metricas', 'diariasComOferta', filters] as const,
+    diariasComCriativo: (filters?: any) => ['metricas', 'diarias', 'comCriativo', filters] as const,
     aggregatedByOferta: (ofertaId: string) => ['metricas', 'aggregated', ofertaId] as const,
     allAggregated: () => ['metricas', 'allAggregated'] as const,
     totais: () => ['metricas', 'totais'] as const,
@@ -129,23 +132,36 @@ export function useUpdateOferta() {
 
 export function useArchiveOferta() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: (id: string) => archiveOferta(id),
     onSuccess: () => {
+      // Invalidar ofertas E criativos, pois ambos foram afetados
       queryClient.invalidateQueries({ queryKey: queryKeys.ofertas.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.criativos.all });
     },
   });
 }
 
 export function useRestoreOferta() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
-    mutationFn: (id: string) => restoreOferta(id),
+    mutationFn: ({ id, restoreCreatives }: { id: string; restoreCreatives: boolean }) =>
+      restoreOferta(id, restoreCreatives),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.ofertas.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.criativos.all });
     },
+  });
+}
+
+// Hook para contar criativos arquivados junto com a oferta
+export function useCountCriativosArquivadosComOferta(ofertaId: string) {
+  return useQuery({
+    queryKey: ['criativos', 'countArquivadosComOferta', ofertaId],
+    queryFn: () => countCriativosArquivadosComOferta(ofertaId),
+    enabled: !!ofertaId,
   });
 }
 
@@ -281,7 +297,7 @@ export function useDeleteCriativo() {
 
 export function useMetricasCriativo(criativoId: string, periodo?: string) {
   const dateRange = periodo ? getDateRange(periodo) : undefined;
-  
+
   return useQuery({
     queryKey: queryKeys.metricas.byCriativo(criativoId, periodo),
     queryFn: () => fetchMetricasDiarias({
@@ -290,6 +306,68 @@ export function useMetricasCriativo(criativoId: string, periodo?: string) {
       dataFim: dateRange?.dataFim,
     }),
     enabled: !!criativoId,
+  });
+}
+
+// Tipo para métricas agregadas por criativo
+export interface CriativoAggregatedMetrics {
+  criativoId: string;
+  spend: number;
+  faturado: number;
+  roas: number;
+  ic: number;
+  cpc: number;
+}
+
+// Hook para buscar métricas agregadas de todos os criativos
+export function useAllCriativosAggregatedMetrics() {
+  return useQuery({
+    queryKey: ['metricas', 'allCriativosAggregated'],
+    queryFn: async () => {
+      // Buscar todas as métricas de todos os criativos
+      const allMetrics = await fetchMetricasDiarias({});
+
+      // Agrupar por criativo_id
+      const metricsByCriativo = new Map<string, typeof allMetrics>();
+
+      allMetrics.forEach((m) => {
+        if (!m.criativo_id) return;
+        const existing = metricsByCriativo.get(m.criativo_id) || [];
+        existing.push(m);
+        metricsByCriativo.set(m.criativo_id, existing);
+      });
+
+      // Calcular agregados para cada criativo
+      const aggregated = new Map<string, CriativoAggregatedMetrics>();
+
+      metricsByCriativo.forEach((metricas, criativoId) => {
+        const spend = metricas.reduce((acc, m) => acc + (m.spend || 0), 0);
+        const faturado = metricas.reduce((acc, m) => acc + (m.faturado || 0), 0);
+        const roas = spend > 0 ? faturado / spend : 0;
+
+        // Média de IC e CPC
+        const metricasComIC = metricas.filter(m => m.ic !== null && m.ic !== undefined);
+        const ic = metricasComIC.length > 0
+          ? metricasComIC.reduce((acc, m) => acc + (m.ic || 0), 0) / metricasComIC.length
+          : 0;
+
+        const metricasComCPC = metricas.filter(m => m.cpc !== null && m.cpc !== undefined);
+        const cpc = metricasComCPC.length > 0
+          ? metricasComCPC.reduce((acc, m) => acc + (m.cpc || 0), 0) / metricasComCPC.length
+          : 0;
+
+        aggregated.set(criativoId, {
+          criativoId,
+          spend,
+          faturado,
+          roas,
+          ic,
+          cpc,
+        });
+      });
+
+      return aggregated;
+    },
   });
 }
 
@@ -316,6 +394,78 @@ export function useMetricasDiariasComOferta(filters?: {
   return useQuery({
     queryKey: queryKeys.metricas.diariasComOferta(filters as Record<string, string>),
     queryFn: () => fetchMetricasDiariasOfertaComJoin(filters),
+  });
+}
+
+// Tipo para métricas diárias com dados do criativo
+export interface MetricaDiariaComCriativo {
+  id: string;
+  data: string;
+  spend: number | null;
+  faturado: number | null;
+  roas: number | null;
+  ic: number | null;
+  cpc: number | null;
+  cliques: number | null;
+  impressoes: number | null;
+  conversoes: number | null;
+  ctr: number | null;
+  cpm: number | null;
+  criativo: {
+    id: string;
+    id_unico: string;
+    oferta_id: string | null;
+    fonte: string;
+    copy_responsavel: string;
+    status: string | null;
+    url: string | null;
+    oferta: {
+      id: string;
+      nome: string;
+      thresholds: any;
+    } | null;
+  } | null;
+}
+
+// Hook para buscar métricas diárias com dados do criativo (JOIN)
+export function useMetricasDiariasComCriativo(filters?: {
+  dataInicio?: string;
+  dataFim?: string;
+  ofertaId?: string;
+  fonte?: string;
+  copywriter?: string;
+}) {
+  return useQuery({
+    queryKey: queryKeys.metricas.diariasComCriativo(filters),
+    queryFn: async (): Promise<MetricaDiariaComCriativo[]> => {
+      let query = supabase
+        .from('metricas_diarias')
+        .select(`
+          *,
+          criativo:criativos(
+            id,
+            id_unico,
+            oferta_id,
+            fonte,
+            copy_responsavel,
+            status,
+            url,
+            oferta:ofertas(id, nome, thresholds)
+          )
+        `)
+        .order('data', { ascending: false });
+
+      if (filters?.dataInicio) {
+        query = query.gte('data', filters.dataInicio);
+      }
+      if (filters?.dataFim) {
+        query = query.lte('data', filters.dataFim);
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+      return (data || []) as MetricaDiariaComCriativo[];
+    },
   });
 }
 
@@ -501,21 +651,22 @@ export function useCreativesCountByOffer() {
     queryKey: ['criativos', 'countByOffer'],
     queryFn: async () => {
       const criativos = await fetchCriativos();
-      
-      const countByOffer = new Map<string, { liberado: number; em_teste: number; nao_validado: number }>();
-      
+
+      const countByOffer = new Map<string, { liberado: number; em_teste: number; nao_validado: number; arquivado: number }>();
+
       criativos.forEach((c) => {
         if (!c.oferta_id) return;
-        
-        const existing = countByOffer.get(c.oferta_id) || { liberado: 0, em_teste: 0, nao_validado: 0 };
-        
+
+        const existing = countByOffer.get(c.oferta_id) || { liberado: 0, em_teste: 0, nao_validado: 0, arquivado: 0 };
+
         if (c.status === 'liberado') existing.liberado++;
         else if (c.status === 'em_teste') existing.em_teste++;
         else if (c.status === 'nao_validado') existing.nao_validado++;
-        
+        else if (c.status === 'arquivado') existing.arquivado++;
+
         countByOffer.set(c.oferta_id, existing);
       });
-      
+
       return countByOffer;
     },
   });

@@ -4,6 +4,9 @@ import path from "path";
 
 export default defineConfig({
   plugins: [react()],
+  optimizeDeps: {
+    exclude: ["@radix-ui/react-tooltip", "next-themes"],
+  },
   test: {
     environment: "jsdom",
     globals: true,
